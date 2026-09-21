@@ -34,11 +34,14 @@ ouvre une seconde fenêtre de navigation privée et connecte-toi avec un autre p
 ## Vérifier que tout fonctionne
 
 ```bash
-npm test            # 40 tests : tirage, règles d'échange, sécurité
+npm test            # tirage, règles d'échange, codes de boosters, sécurité
 npm run typecheck   # vérifie le code TypeScript
 npm run simulate    # combien de boosters pour compléter la série ? (utilise le vrai tirage)
 npm run smoke       # parcours complet contre le serveur lancé par « npm run dev »
 ```
+
+`npm test` et `npm run typecheck` tournent aussi automatiquement sur GitHub à chaque push
+(`.github/workflows/ci.yml`).
 
 ## Mettre un test en ligne sur Cloudflare
 
