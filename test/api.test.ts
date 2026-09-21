@@ -216,6 +216,22 @@ describe('vue d\'ensemble admin', () => {
     expect(Array.isArray(res.json.trades)).toBe(true);
     expect(Array.isArray(res.json.notableOpenings)).toBe(true);
   });
+
+  it('signale les tirages contenant une carte rare et plus, mais pas les tirages 100% communs', async () => {
+    const chef = await login('chef');
+    db.exec(`INSERT INTO openings (user_id, kind, card_ids) VALUES (${chef.id}, 'normal', '[1,2,3,4,${RARE}]')`);
+    db.exec(`INSERT INTO openings (user_id, kind, card_ids) VALUES (${chef.id}, 'normal', '[1,2,3,4,5]')`);
+    const res = await call('GET', '/api/admin/overview', { cookie: chef.cookie });
+    expect(res.json.notableOpenings).toHaveLength(1);
+    expect(res.json.notableOpenings[0]).toMatchObject({ userName: 'chef', cards: [{ name: 'Rare 01', rarity: 'rare' }] });
+  });
+
+  it('la liste des codes indique le bon créateur et le bon nombre d\'utilisations', async () => {
+    const chef = await login('chef');
+    const created = await call('POST', '/api/admin/codes', { cookie: chef.cookie, body: { boosters: 1, maxUses: 1 } });
+    const list = await call('GET', '/api/admin/codes', { cookie: chef.cookie });
+    expect(list.json[0]).toMatchObject({ code: created.json.code, createdByName: 'chef', uses: 0 });
+  });
 });
 
 describe('ouverture de boosters', () => {

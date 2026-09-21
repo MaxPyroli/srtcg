@@ -146,7 +146,7 @@
       <label>Pseudo
         <input id="loginName" required minlength="2" maxlength="24" autocomplete="off">
       </label>
-      <label id="pwRow" hidden>Mot de passe de test
+      <label id="pwRow">Mot de passe de test (si le serveur en demande un)
         <input id="loginPw" type="password" autocomplete="off">
       </label>
       <button class="primary" type="submit">Se connecter</button>
@@ -376,7 +376,6 @@ $('#loginForm').addEventListener('submit', async (event) => {
     const me = await api('POST', '/api/dev/login', { name: $('#loginName').value.trim(), password: $('#loginPw').value || undefined });
     await enterGame(me);
   } catch (error) {
-    if (error.code === 'bad_password') $('#pwRow').hidden = false;
     $('#loginError').textContent = error.status === 404
       ? "La connexion de test est désactivée sur ce serveur."
       : error.message;
