@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TCG de la communauté : page de test</title>
+<style>
+  :root {
+    --fond: #eceff3;
+    --encre: #1b2430;
+    --discret: #5b6675;
+    --panneau: #ffffff;
+    --trait: #cfd6df;
+    --accent: #2b59c3;
+    --erreur: #b3261e;
+    --commune: #8b95a3;
+    --peu_commune: #2f9e6e;
+    --rare: #3b6fd4;
+    --legendaire: #d69a12;
+    --secrete: #8a45d1;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--encre);
+    background: var(--fond);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; line-height: 1.5; }
+  header.top, main { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+  header.top { padding-top: 24px; padding-bottom: 8px; }
+  h1 { margin: 0; font-size: 1.5rem; }
+  h2 { margin: 0 0 12px; font-size: 1.1rem; }
+  p { margin: 0 0 12px; }
+  .sub { color: var(--discret); max-width: 60ch; }
+  .who { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 8px; }
+  .who strong { font-weight: 600; }
+
+  .panel { background: var(--panneau); border: 1px solid var(--trait); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+  label { display: block; margin-bottom: 12px; font-weight: 500; }
+  input, select { display: block; width: 100%; max-width: 360px; margin-top: 4px; padding: 8px 10px; font: inherit; border: 1px solid var(--trait); border-radius: 6px; background: #fff; color: inherit; }
+  button { font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 9px 16px; font-weight: 600; }
+  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  button.secondary { background: #fff; color: var(--encre); border: 1px solid var(--trait); border-radius: 6px; padding: 8px 14px; }
+  button.link { background: none; border: 0; color: var(--accent); padding: 0; text-decoration: underline; }
+  :focus-visible { outline: 3px solid #f2a900; outline-offset: 2px; }
+  .error { color: var(--erreur); min-height: 1.5em; margin: 8px 0 0; }
+  .muted { color: var(--discret); }
+
+  nav.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0; }
+  nav.tabs button { background: #fff; border: 1px solid var(--trait); border-radius: 6px; padding: 8px 14px; }
+  nav.tabs button[aria-selected="true"] { background: var(--encre); color: #fff; border-color: var(--encre); }
+
+  /* Cartes */
+  .cards { display: flex; flex-wrap: wrap; gap: 14px; }
+  .card {
+    position: relative; width: 128px; height: 176px; padding: 12px 10px;
+    background: #fff; border: 3px solid var(--c); border-radius: 10px;
+    display: flex; flex-direction: column; justify-content: space-between; text-align: left;
+  }
+  .card .nom { font-weight: 600; }
+  .card .rar { font-size: .85rem; color: var(--c); font-weight: 600; }
+  .card .qte { position: absolute; top: -10px; right: -10px; background: var(--encre); color: #fff; border-radius: 999px; min-width: 28px; padding: 1px 8px; font-size: .85rem; text-align: center; }
+  .card .res { font-size: .8rem; color: var(--discret); }
+  .r-commune { --c: var(--commune); }
+  .r-peu_commune { --c: var(--peu_commune); }
+  .r-rare { --c: var(--rare); box-shadow: 0 0 10px var(--c); }
+  .r-legendaire { --c: var(--legendaire); box-shadow: 0 0 16px var(--c); }
+  .r-secrete { --c: var(--secrete); box-shadow: 0 0 20px var(--c); }
+
+  /* Ouverture d'un booster : la carte se retourne quand on la touche */
+  .flip { perspective: 700px; width: 128px; height: 176px; padding: 0; border: 0; background: none; }
+  .flip-inner { position: relative; width: 100%; height: 100%; transition: transform .55s; transform-style: preserve-3d; }
+  .flip.open .flip-inner { transform: rotateY(180deg); }
+  .flip-back, .flip-front { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 10px; }
+  .flip-back { background: repeating-linear-gradient(45deg, #26303d, #26303d 8px, #2e3a49 8px, #2e3a49 16px); border: 3px solid #1b2430; }
+  .flip-front { transform: rotateY(180deg); }
+  .flip-front .card { width: 100%; height: 100%; }
+  @media (prefers-reduced-motion: reduce) { .flip-inner { transition: none; } }
+  .annonce { font-weight: 700; font-size: 1.15rem; margin: 14px 0 0; color: var(--secrete); }
+
+  .filtres { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .filtres button[aria-pressed="true"] { background: var(--encre); color: #fff; border-color: var(--encre); }
+
+  ul.liste { list-style: none; margin: 0; padding: 0; }
+  ul.liste li { border-top: 1px solid var(--trait); padding: 10px 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+  ul.liste li:first-child { border-top: 0; }
+  .pastille { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .8rem; background: var(--fond); }
+  .actions { display: flex; gap: 8px; }
+
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: 90vw; padding: 10px 16px; border-radius: 8px; background: var(--encre); color: #fff; opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
+  .toast.bad { background: var(--erreur); }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>TCG de la communauté</h1>
+  <p class="sub">Page de test du moteur : boosters, collection, échanges. Le design viendra avec l'univers du jeu.</p>
+  <div id="who" class="who" hidden>
+    <span>Joueur : <strong id="whoName"></strong></span>
+    <span>Boosters : <strong id="whoBoosters">0</strong></span>
+    <button id="logout" class="link" type="button">Se déconnecter</button>
+  </div>
+</header>
+
+<main>
+  <section id="login" class="panel" hidden>
+    <h2>Connexion de test</h2>
+    <p class="muted">La connexion Twitch remplacera ce formulaire. Choisis un pseudo pour créer ou retrouver un joueur.</p>
+    <form id="loginForm">
+      <label>Pseudo
+        <input id="loginName" required minlength="2" maxlength="24" autocomplete="off">
+      </label>
+      <label id="pwRow" hidden>Mot de passe de test
+        <input id="loginPw" type="password" autocomplete="off">
+      </label>
+      <button class="primary" type="submit">Se connecter</button>
+    </form>
+    <p id="loginError" class="error" role="alert"></p>
+  </section>
+
+  <section id="game" hidden>
+    <nav class="tabs" aria-label="Sections">
+      <button type="button" data-tab="booster" aria-selected="true">Boosters</button>
+      <button type="button" data-tab="collection" aria-selected="false">Ma collection</button>
+      <button type="button" data-tab="trades" aria-selected="false">Échanges</button>
+      <button type="button" data-tab="admin" aria-selected="false" id="tabAdmin" hidden>Administration</button>
+    </nav>
+
+    <div id="tab-booster" class="panel">
+      <h2>Ouvrir un booster</h2>
+      <p id="boosterInfo" class="muted"></p>
+      <p><button id="openBtn" class="primary" type="button">Ouvrir un booster</button>
+         <button id="revealAll" class="secondary" type="button" hidden>Tout révéler</button></p>
+      <div id="reveal" class="cards" aria-live="polite"></div>
+      <p id="announce" class="annonce" role="status"></p>
+    </div>
+
+    <div id="tab-collection" class="panel" hidden>
+      <h2>Ma collection</h2>
+      <p id="collectionSummary" class="muted"></p>
+      <div id="filters" class="filtres"></div>
+      <div id="collectionGrid" class="cards"></div>
+    </div>
+
+    <div id="tab-trades" class="panel" hidden>
+      <h2>Proposer un échange</h2>
+      <p class="muted">Un échange se fait entre deux cartes de même rareté. La carte que tu offres est bloquée jusqu'à la réponse.</p>
+      <label>Avec quel joueur ?
+        <select id="tradeWith"></select>
+      </label>
+      <label>Carte que tu veux
+        <select id="wantCard"></select>
+      </label>
+      <label>Carte que tu offres
+        <select id="giveCard"></select>
+      </label>
+      <button id="proposeBtn" class="primary" type="button">Proposer l'échange</button>
+      <h2 style="margin-top:28px">Mes demandes</h2>
+      <ul id="tradeList" class="liste"></ul>
+    </div>
+
+    <div id="tab-admin" class="panel" hidden>
+      <h2>Offrir des boosters</h2>
+      <label>Joueur
+        <select id="grantUser"></select>
+      </label>
+      <label>Nombre de boosters (1 à 100)
+        <input id="grantAmount" type="number" min="1" max="100" value="5">
+      </label>
+      <button id="grantBtn" class="primary" type="button">Offrir</button>
+    </div>
+  </section>
+
+  <p id="toast" class="toast" role="status"></p>
+</main>
+
+<script>
+'use strict';
+
+const $ = (selector) => document.querySelector(selector);
+
+const RARITIES = {
+  commune: 'Commune',
+  peu_commune: 'Peu commune',
+  rare: 'Rare',
+  legendaire: 'Légendaire',
+  secrete: 'Secrète',
+};
+const RARITY_ORDER = Object.keys(RARITIES);
+
+const state = { me: null, catalog: [], collection: [], filter: 'all', players: [], trades: [], theirCards: [] };
+
+/** Crée un élément sans jamais interpréter de HTML : les pseudos des joueurs restent du texte. */
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === false || value == null) continue;
+    if (key === 'class') el.className = value;
+    else if (key.startsWith('on')) el.addEventListener(key.slice(2), value);
+    else el.setAttribute(key, value === true ? '' : value);
+  }
+  for (const child of children.flat()) {
+    if (child == null || child === false) continue;
+    el.append(child.nodeType ? child : document.createTextNode(String(child)));
+  }
+  return el;
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { 'content-type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = null;
+  try { data = await res.json(); } catch { /* réponse vide */ }
+  if (!res.ok) {
+    const error = new Error(data?.message || `Erreur ${res.status}`);
+    error.status = res.status;
+    error.code = data?.error;
+    throw error;
+  }
+  return data;
+}
+
+let toastTimer;
+function say(message, bad = false) {
+  const el = $('#toast');
+  el.textContent = message;
+  el.className = 'toast show' + (bad ? ' bad' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, 4000);
+}
+
+/** Exécute une action, affiche l'erreur éventuelle, et empêche le double clic. */
+async function guarded(button, action) {
+  button.disabled = true;
+  try { await action(); }
+  catch (error) { say(error.message, true); }
+  finally { button.disabled = false; }
+}
+
+// --- Cartes ----------------------------------------------------------------
+
+function cardView(card, { quantity, reserved } = {}) {
+  return h('div', { class: `card r-${card.rarity}` },
+    quantity > 1 ? h('span', { class: 'qte' }, `×${quantity}`) : null,
+    h('span', { class: 'nom' }, card.name),
+    h('span', {},
+      h('span', { class: 'rar' }, RARITIES[card.rarity]),
+      reserved > 0 ? h('div', { class: 'res' }, `${reserved} bloquée${reserved > 1 ? 's' : ''} par un échange`) : null));
+}
+
+// --- Connexion -------------------------------------------------------------
+
+function renderWho() {
+  $('#who').hidden = !state.me;
+  if (!state.me) return;
+  $('#whoName').textContent = state.me.displayName;
+  $('#whoBoosters').textContent = state.me.boosters;
+  $('#tabAdmin').hidden = !state.me.isAdmin;
+  $('#boosterInfo').textContent = state.me.boosters > 0
+    ? `Tu as ${state.me.boosters} booster${state.me.boosters > 1 ? 's' : ''} à ouvrir.`
+    : "Tu n'as aucun booster pour le moment. Un administrateur peut t'en offrir.";
+  $('#openBtn').disabled = state.me.boosters === 0;
+}
+
+async function enterGame(me) {
+  state.me = me;
+  state.catalog = await api('GET', '/api/cards');
+  $('#login').hidden = true;
+  $('#game').hidden = false;
+  renderWho();
+  showTab('booster');
+}
+
+$('#loginForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('#loginError').textContent = '';
+  const button = event.submitter || $('#loginForm button');
+  button.disabled = true;
+  try {
+    const me = await api('POST', '/api/dev/login', { name: $('#loginName').value.trim(), password: $('#loginPw').value || undefined });
+    await enterGame(me);
+  } catch (error) {
+    if (error.code === 'bad_password') $('#pwRow').hidden = false;
+    $('#loginError').textContent = error.status === 404
+      ? "La connexion de test est désactivée sur ce serveur."
+      : error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#logout').addEventListener('click', async () => {
+  await api('POST', '/api/logout');
+  state.me = null;
+  $('#game').hidden = true;
+  $('#login').hidden = false;
+  renderWho();
+});
+
+// --- Onglets ---------------------------------------------------------------
+
+async function refreshMe() {
+  try {
+    state.me = await api('GET', '/api/me');
+    renderWho();
+  } catch { /* la session a peut-être expiré : la prochaine action le dira */ }
+}
+
+function showTab(name) {
+  for (const button of document.querySelectorAll('nav.tabs button')) {
+    button.setAttribute('aria-selected', String(button.dataset.tab === name));
+  }
+  for (const id of ['booster', 'collection', 'trades', 'admin']) $(`#tab-${id}`).hidden = id !== name;
+  if (name === 'booster') refreshMe();
+  if (name === 'collection') refreshCollection();
+  if (name === 'trades') refreshTrades();
+  if (name === 'admin') refreshPlayers().then(renderGrantUsers);
+}
+
+document.querySelector('nav.tabs').addEventListener('click', (event) => {
+  const tab = event.target.closest('button[data-tab]');
+  if (tab) showTab(tab.dataset.tab);
+});
+
+// --- Boosters --------------------------------------------------------------
+
+$('#openBtn').addEventListener('click', async (event) => {
+  await guarded(event.currentTarget, async () => {
+    const opened = await api('POST', '/api/boosters/open');
+    state.me.boosters = opened.boostersLeft;
+    showReveal(opened);
+  });
+  // Le bouton reste désactivé s'il ne reste aucun booster
+  renderWho();
+});
+
+function showReveal(opened) {
+  const zone = $('#reveal');
+  zone.replaceChildren();
+  $('#announce').textContent = '';
+  let flipped = 0;
+
+  const finish = () => {
+    $('#revealAll').hidden = true;
+    if (opened.kind === 'god') $('#announce').textContent = 'God Pack !';
+    if (opened.kind === 'secret') $('#announce').textContent = 'Carte secrète !';
+  };
+
+  const buttons = opened.cards.map((card) => {
+    const button = h('button', {
+      type: 'button',
+      class: 'flip',
+      'aria-label': 'Révéler la carte',
+      onclick: () => {
+        if (button.classList.contains('open')) return;
+        button.classList.add('open');
+        button.setAttribute('aria-label', `${card.name}, ${RARITIES[card.rarity]}`);
+        if (++flipped === opened.cards.length) finish();
+      },
+    },
+      h('div', { class: 'flip-inner' },
+        h('div', { class: 'flip-back' }),
+        h('div', { class: 'flip-front' }, cardView(card))));
+    return button;
+  });
+
+  zone.append(...buttons);
+  $('#revealAll').hidden = false;
+  $('#revealAll').onclick = () => buttons.forEach((b) => b.click());
+}
+
+// --- Collection ------------------------------------------------------------
+
+async function refreshCollection() {
+  state.collection = await api('GET', '/api/collection');
+  renderCollection();
+}
+
+function renderCollection() {
+  const owned = state.collection;
+  const distinct = owned.filter((c) => c.rarity !== 'secrete').length;
+  const total = state.catalog.filter((c) => c.rarity !== 'secrete').length;
+  const hasSecret = owned.some((c) => c.rarity === 'secrete');
+  $('#collectionSummary').textContent =
+    `${distinct} carte${distinct > 1 ? 's' : ''} différente${distinct > 1 ? 's' : ''} sur ${total}` +
+    (hasSecret ? ', et la carte secrète !' : ', plus une carte secrète à découvrir.');
+
+  const filters = $('#filters');
+  filters.replaceChildren(...['all', ...RARITY_ORDER].map((key) =>
+    h('button', {
+      type: 'button', class: 'secondary', 'aria-pressed': String(state.filter === key),
+      onclick: () => { state.filter = key; renderCollection(); },
+    }, key === 'all' ? 'Toutes' : RARITIES[key])));
+
+  const shown = owned.filter((c) => state.filter === 'all' || c.rarity === state.filter);
+  $('#collectionGrid').replaceChildren(...(shown.length
+    ? shown.map((c) => cardView({ name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved }))
+    : [h('p', { class: 'muted' }, owned.length ? 'Aucune carte de cette rareté.' : "Ta collection est vide : ouvre un booster pour commencer.")]));
+}
+
+// --- Échanges --------------------------------------------------------------
+
+async function refreshPlayers() {
+  state.players = await api('GET', '/api/users');
+}
+
+async function refreshTrades() {
+  await refreshPlayers();
+  [state.collection, state.trades] = await Promise.all([api('GET', '/api/collection'), api('GET', '/api/trades')]);
+  const others = state.players.filter((p) => p.id !== state.me.id);
+  const select = $('#tradeWith');
+  select.replaceChildren(h('option', { value: '' }, others.length ? 'Choisir un joueur' : "Aucun autre joueur pour l'instant"),
+    ...others.map((p) => h('option', { value: p.id }, `${p.displayName} (${p.distinctCards} cartes)`)));
+  await loadTheirCards();
+  renderTrades();
+}
+
+async function loadTheirCards() {
+  const id = Number($('#tradeWith').value);
+  state.theirCards = id ? (await api('GET', `/api/users/${id}/collection`)).cards.filter((c) => c.tradable) : [];
+  const want = $('#wantCard');
+  want.replaceChildren(h('option', { value: '' }, id ? 'Choisir une carte' : '—'),
+    ...state.theirCards.map((c) => h('option', { value: c.cardId }, `${c.name} (${RARITIES[c.rarity]})`)));
+  renderGiveOptions();
+}
+
+function renderGiveOptions() {
+  const wanted = state.theirCards.find((c) => c.cardId === Number($('#wantCard').value));
+  const mine = wanted
+    ? state.collection.filter((c) => c.rarity === wanted.rarity && c.tradable && c.quantity - c.reserved > 0 && c.cardId !== wanted.cardId)
+    : [];
+  $('#giveCard').replaceChildren(
+    h('option', { value: '' }, !wanted ? '—' : mine.length ? 'Choisir une carte' : `Tu n'as aucune carte ${RARITIES[wanted.rarity].toLowerCase()} à offrir`),
+    ...mine.map((c) => h('option', { value: c.cardId }, `${c.name} (${c.quantity - c.reserved} disponible${c.quantity - c.reserved > 1 ? 's' : ''})`)));
+}
+
+$('#tradeWith').addEventListener('change', () => loadTheirCards().catch((e) => say(e.message, true)));
+$('#wantCard').addEventListener('change', renderGiveOptions);
+
+$('#proposeBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
+  const toUserId = Number($('#tradeWith').value);
+  const requestedCardId = Number($('#wantCard').value);
+  const offeredCardId = Number($('#giveCard').value);
+  if (!toUserId || !requestedCardId || !offeredCardId) throw new Error('Choisis un joueur, la carte que tu veux et la carte que tu offres.');
+  await api('POST', '/api/trades', { toUserId, requestedCardId, offeredCardId });
+  say('Demande envoyée.');
+  await refreshTrades();
+}));
+
+const STATUS = { pending: 'En attente', accepted: 'Acceptée', declined: 'Refusée', cancelled: 'Annulée' };
+
+async function conclude(id, action, message) {
+  await api('POST', `/api/trades/${id}/${action}`);
+  say(message);
+  await refreshTrades();
+}
+
+function renderTrades() {
+  const list = $('#tradeList');
+  if (!state.trades.length) { list.replaceChildren(h('li', { class: 'muted' }, "Aucune demande pour l'instant.")); return; }
+  list.replaceChildren(...state.trades.map((t) => {
+    const mineOut = t.fromUserId === state.me.id;
+    const text = mineOut
+      ? `Tu proposes ${t.offeredName} à ${t.toName} contre ${t.requestedName}`
+      : `${t.fromName} te propose ${t.offeredName} contre ${t.requestedName}`;
+    const buttons = [];
+    if (t.status === 'pending' && mineOut) {
+      buttons.push(h('button', { type: 'button', class: 'secondary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'cancel', 'Demande annulée.')) }, 'Annuler'));
+    }
+    if (t.status === 'pending' && !mineOut) {
+      buttons.push(
+        h('button', { type: 'button', class: 'primary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'accept', 'Échange accepté.')) }, 'Accepter'),
+        h('button', { type: 'button', class: 'secondary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'decline', 'Demande refusée.')) }, 'Refuser'));
+    }
+    return h('li', {}, h('span', {}, text, ' ', h('span', { class: 'pastille' }, STATUS[t.status])), h('span', { class: 'actions' }, buttons));
+  }));
+}
+
+// --- Administration --------------------------------------------------------
+
+function renderGrantUsers() {
+  $('#grantUser').replaceChildren(...state.players.map((p) => h('option', { value: p.id }, p.displayName)));
+}
+
+$('#grantBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
+  const userId = Number($('#grantUser').value);
+  const amount = Number($('#grantAmount').value);
+  const result = await api('POST', '/api/admin/grant', { userId, amount });
+  if (userId === state.me.id) { state.me.boosters = result.boosters; renderWho(); }
+  say(`${amount} booster${amount > 1 ? 's' : ''} offert${amount > 1 ? 's' : ''}.`);
+}));
+
+// --- Démarrage -------------------------------------------------------------
+
+(async () => {
+  try {
+    await enterGame(await api('GET', '/api/me'));
+  } catch {
+    $('#login').hidden = false;
+  }
+})();
+</script>
+</body>
+</html>

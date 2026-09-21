@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tcg-communaute",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-01",
+
+  // Le site (pages, images) est servi gratuitement depuis le dossier public/.
+  "assets": { "directory": "./public" },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tcg-communaute",
+      // Remplacer par l'identifiant affiché par : npx wrangler d1 create tcg-communaute
+      "database_id": "REMPLACER-PAR-L-ID-DE-LA-BASE",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // La connexion de test est coupée par défaut. Ne jamais la mettre à "1" en production.
+  "vars": { "DEV_AUTH": "0" }
+}

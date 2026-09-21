@@ -1,0 +1,5 @@
+# Copier ce fichier en ".dev.vars" pour le développement en local (il n'est jamais envoyé en ligne).
+SESSION_SECRET=remplace-moi-par-une-longue-chaine-aleatoire
+DEV_AUTH=1
+# Pseudos administrateurs de la connexion de test (séparés par des virgules)
+DEV_ADMINS=admin
