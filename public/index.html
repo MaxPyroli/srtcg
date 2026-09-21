@@ -116,6 +116,18 @@
 
   .filtres { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
   .filtres button[aria-pressed="true"] { background: var(--encre); color: #fff; border-color: var(--encre); }
+  .filtres.emoji button { font-size: 1.15rem; line-height: 1; padding: 6px 9px; }
+  .filtres.colors button { width: 30px; height: 30px; padding: 0; border-radius: 999px; border: 3px solid #fff; box-shadow: 0 0 0 1px var(--trait); }
+  .filtres.colors button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--encre); }
+
+  fieldset { border: 0; padding: 0; margin: 0 0 14px; }
+  fieldset legend { font-weight: 500; margin-bottom: 6px; padding: 0; }
+
+  /* Profils */
+  .avatar { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 999px; font-size: 1.3rem; color: #fff; flex: none; }
+  .avatar.lg { width: 72px; height: 72px; font-size: 2.2rem; }
+  .avatar-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+  .player-row { display: flex; align-items: center; gap: 10px; }
 
   ul.liste { list-style: none; margin: 0; padding: 0; }
   ul.liste li { border-top: 1px solid var(--trait); padding: 10px 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
@@ -142,13 +154,17 @@
 <main>
   <section id="login" class="panel" hidden>
     <h2>Connexion de test</h2>
-    <p class="muted">La connexion Twitch remplacera ce formulaire. Choisis un pseudo pour créer ou retrouver un joueur.</p>
+    <p class="muted">La connexion Twitch remplacera ce formulaire. Choisis un pseudo : la première fois, le mot
+      de passe que tu tapes devient le tien : retape-le à chaque connexion suivante.</p>
     <form id="loginForm">
       <label>Pseudo
         <input id="loginName" required minlength="2" maxlength="24" autocomplete="off">
       </label>
-      <label id="pwRow">Mot de passe de test (si le serveur en demande un)
-        <input id="loginPw" type="password" autocomplete="off">
+      <label>Ton mot de passe
+        <input id="loginPw" type="password" required minlength="4" autocomplete="off">
+      </label>
+      <label id="siteRow">Mot de passe du site (seulement pour créer un compte, si demandé)
+        <input id="loginSitePw" type="password" autocomplete="off">
       </label>
       <button class="primary" type="submit">Se connecter</button>
     </form>
@@ -160,6 +176,7 @@
       <button type="button" data-tab="booster" aria-selected="true">Boosters</button>
       <button type="button" data-tab="collection" aria-selected="false">Ma collection</button>
       <button type="button" data-tab="trades" aria-selected="false">Échanges</button>
+      <button type="button" data-tab="profiles" aria-selected="false">Profils</button>
       <button type="button" data-tab="admin" aria-selected="false" id="tabAdmin" hidden>Administration</button>
     </nav>
 
@@ -206,6 +223,45 @@
       <button id="proposeBtn" class="primary" type="button">Proposer l'échange</button>
       <h2 style="margin-top:28px">Mes demandes</h2>
       <ul id="tradeList" class="liste"></ul>
+    </div>
+
+    <div id="tab-profiles" class="panel" hidden>
+      <h2>Mon profil</h2>
+      <div id="myAvatarPreview" class="avatar-row"></div>
+      <fieldset>
+        <legend>Icône</legend>
+        <div id="emojiPicker" class="filtres emoji"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Couleur</legend>
+        <div id="colorPicker" class="filtres colors"></div>
+      </fieldset>
+      <label>Bio (200 caractères max)
+        <textarea id="bioInput" maxlength="200" rows="3"></textarea>
+      </label>
+      <label>Carte vedette
+        <select id="featuredCardSelect"><option value="">Aucune</option></select>
+      </label>
+      <button id="saveProfileBtn" class="primary" type="button">Enregistrer mon profil</button>
+
+      <div id="playersView">
+        <h2 style="margin-top:28px">Tous les joueurs</h2>
+        <ul id="playerList" class="liste"></ul>
+      </div>
+
+      <div id="viewedProfile" hidden>
+        <div class="avatar-row" style="margin-top:28px">
+          <span id="viewedAvatar"></span>
+          <div>
+            <h2 style="margin:0">Profil de <span id="viewedName"></span></h2>
+            <p id="viewedBio" class="muted" style="margin:4px 0 0"></p>
+          </div>
+        </div>
+        <div id="viewedStats" class="who"></div>
+        <p id="viewedFeatured" class="muted"></p>
+        <div id="viewedCollection" class="cards"></div>
+        <p><button id="closeProfileBtn" class="secondary" type="button">← Retour à la liste des joueurs</button></p>
+      </div>
     </div>
 
     <div id="tab-admin" class="panel" hidden>
@@ -374,7 +430,11 @@ $('#loginForm').addEventListener('submit', async (event) => {
   const button = event.submitter || $('#loginForm button');
   button.disabled = true;
   try {
-    const me = await api('POST', '/api/dev/login', { name: $('#loginName').value.trim(), password: $('#loginPw').value || undefined });
+    const me = await api('POST', '/api/dev/login', {
+      name: $('#loginName').value.trim(),
+      password: $('#loginPw').value || undefined,
+      sitePassword: $('#loginSitePw').value || undefined,
+    });
     await enterGame(me);
   } catch (error) {
     $('#loginError').textContent = error.status === 404
@@ -406,10 +466,11 @@ function showTab(name) {
   for (const button of document.querySelectorAll('#mainTabs button')) {
     button.setAttribute('aria-selected', String(button.dataset.tab === name));
   }
-  for (const id of ['booster', 'collection', 'trades', 'admin']) $(`#tab-${id}`).hidden = id !== name;
+  for (const id of ['booster', 'collection', 'trades', 'profiles', 'admin']) $(`#tab-${id}`).hidden = id !== name;
   if (name === 'booster') refreshMe();
   if (name === 'collection') refreshCollection();
   if (name === 'trades') refreshTrades();
+  if (name === 'profiles') refreshProfilesTab();
   if (name === 'admin') {
     refreshPlayers().then(renderGrantUsers);
     refreshBoosterCodes();
@@ -672,6 +733,108 @@ function renderTrades() {
     }
     return h('li', {}, h('span', {}, text, ' ', h('span', { class: 'pastille' }, STATUS[t.status])), h('span', { class: 'actions' }, buttons));
   }));
+}
+
+// --- Profils -----------------------------------------------------------------
+
+let profileOptions = null;
+let pickedEmoji = '🙂';
+let pickedColor = '#2b59c3';
+
+function avatarView(emoji, color, big) {
+  return h('span', { class: 'avatar' + (big ? ' lg' : ''), style: `background:${color}` }, emoji);
+}
+
+function renderMyAvatarPreview() {
+  $('#myAvatarPreview').replaceChildren(avatarView(pickedEmoji, pickedColor, true), h('span', { class: 'muted' }, 'Aperçu'));
+}
+
+function renderEmojiPicker() {
+  $('#emojiPicker').replaceChildren(...profileOptions.emojis.map((e) => h('button', {
+    type: 'button', 'aria-pressed': String(e === pickedEmoji), 'aria-label': `Icône ${e}`,
+    onclick: () => { pickedEmoji = e; renderEmojiPicker(); renderMyAvatarPreview(); },
+  }, e)));
+}
+
+function renderColorPicker() {
+  $('#colorPicker').replaceChildren(...profileOptions.colors.map((c) => h('button', {
+    type: 'button', 'aria-pressed': String(c === pickedColor), 'aria-label': 'Couleur', style: `background:${c}`,
+    onclick: () => { pickedColor = c; renderColorPicker(); renderMyAvatarPreview(); },
+  })));
+}
+
+async function loadMyProfile() {
+  if (!profileOptions) profileOptions = await api('GET', '/api/profile/options');
+  const { user, cards } = await api('GET', `/api/users/${state.me.id}/collection`);
+  pickedEmoji = user.avatarEmoji;
+  pickedColor = user.avatarColor;
+  renderEmojiPicker();
+  renderColorPicker();
+  renderMyAvatarPreview();
+  $('#bioInput').maxLength = profileOptions.maxBioLength;
+  $('#bioInput').value = user.bio;
+  const owned = cards.filter((c) => c.quantity > 0);
+  $('#featuredCardSelect').replaceChildren(
+    h('option', { value: '' }, 'Aucune'),
+    ...owned.map((c) => h('option', {
+      value: c.cardId, selected: !!user.featuredCard && user.featuredCard.id === c.cardId,
+    }, `${c.name} (${RARITIES[c.rarity]})`)));
+}
+
+$('#saveProfileBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
+  const featuredRaw = $('#featuredCardSelect').value;
+  await api('POST', '/api/profile', {
+    avatarEmoji: pickedEmoji,
+    avatarColor: pickedColor,
+    bio: $('#bioInput').value,
+    featuredCardId: featuredRaw ? Number(featuredRaw) : null,
+  });
+  say('Profil enregistré.');
+  await refreshPlayers();
+  renderPlayerList();
+}));
+
+function renderPlayerList() {
+  $('#playerList').replaceChildren(...(state.players.length ? state.players.map((p) => h('li', {},
+    h('span', { class: 'player-row' },
+      avatarView(p.avatarEmoji, p.avatarColor),
+      h('span', {}, p.displayName, ' ', h('span', { class: 'muted' }, `— ${p.distinctCards} carte${p.distinctCards > 1 ? 's' : ''}`))),
+    h('span', { class: 'actions' }, h('button', { type: 'button', class: 'secondary', onclick: () => viewProfile(p.id) }, 'Voir')))
+  ) : [h('li', { class: 'muted' }, 'Aucun joueur pour le moment.')]));
+}
+
+async function viewProfile(id) {
+  const { user, cards } = await api('GET', `/api/users/${id}/collection`);
+  $('#playersView').hidden = true;
+  $('#viewedProfile').hidden = false;
+  $('#viewedAvatar').replaceChildren(avatarView(user.avatarEmoji, user.avatarColor, true));
+  $('#viewedName').textContent = user.displayName;
+  $('#viewedBio').textContent = user.bio || 'Pas de bio pour le moment.';
+  $('#viewedStats').replaceChildren(
+    h('span', {}, 'Membre depuis : ', h('strong', {}, fmtDate(user.createdAt))),
+    h('span', {}, 'Cartes : ', h('strong', {}, `${user.distinctCards} différentes, ${user.totalCards} au total`)),
+    h('span', {}, 'Boosters ouverts : ', h('strong', {}, user.boostersOpened)),
+    h('span', {}, 'Échanges conclus : ', h('strong', {}, user.tradesCompleted)));
+  $('#viewedFeatured').textContent = user.featuredCard
+    ? `★ Carte vedette : ${user.featuredCard.name} (${RARITIES[user.featuredCard.rarity]})`
+    : '';
+  const owned = cards.filter((c) => c.quantity > 0);
+  $('#viewedCollection').replaceChildren(...(owned.length
+    ? owned.map((c) => cardView({ name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved }))
+    : [h('p', { class: 'muted' }, 'Collection vide pour le moment.')]));
+}
+
+$('#closeProfileBtn').addEventListener('click', () => {
+  $('#viewedProfile').hidden = true;
+  $('#playersView').hidden = false;
+});
+
+async function refreshProfilesTab() {
+  $('#viewedProfile').hidden = true;
+  $('#playersView').hidden = false;
+  await refreshPlayers();
+  renderPlayerList();
+  await loadMyProfile();
 }
 
 // --- Administration --------------------------------------------------------

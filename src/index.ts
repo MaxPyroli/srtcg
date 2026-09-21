@@ -2,14 +2,14 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import type { Env, UserRow } from './types.ts';
-import { SESSION_TTL_SECONDS, MAX_GRANT, MAX_CODE_USES, MAX_CODE_HOURS } from './config.ts';
+import { SESSION_TTL_SECONDS, MAX_GRANT, MAX_CODE_USES, MAX_CODE_HOURS, MAX_BIO_LENGTH, AVATAR_EMOJIS, AVATAR_COLORS } from './config.ts';
 import { cryptoRng } from './rng.ts';
 import { signSession, verifySession } from './auth.ts';
 import {
   GameError,
   getCatalog,
   getUser,
-  upsertDevUser,
+  devLogin,
   listUsers,
   openBooster,
   listCollection,
@@ -24,6 +24,8 @@ import {
   listAdminLog,
   listAllTrades,
   listNotableOpenings,
+  getProfile,
+  updateProfile,
 } from './db.ts';
 import type { TradeOutcome } from './db.ts';
 
@@ -114,6 +116,9 @@ const requireAdmin = async (c: Context<AppEnv>, next: () => Promise<void>) => {
 
 /**
  * Connexion de test, sans Twitch. Désactivée par défaut : elle n'existe que si DEV_AUTH vaut "1".
+ * Chaque pseudo a son propre mot de passe (choisi à la première connexion) : DEV_PASSWORD, s'il
+ * est configuré, ne protège que la création d'un nouveau compte (et la récupération d'un compte
+ * créé avant cette fonctionnalité), pas les connexions suivantes.
  * À remplacer par la connexion Twitch avant d'ouvrir le jeu à la communauté.
  */
 app.post('/api/dev/login', async (c) => {
@@ -123,11 +128,14 @@ app.post('/api/dev/login', async (c) => {
   if (!/^[\p{L}\p{N}_ -]{2,24}$/u.test(name)) {
     throw new GameError('bad_name', 400, 'Le pseudo doit faire 2 à 24 caractères (lettres, chiffres, espace, - ou _).');
   }
-  if (c.env.DEV_PASSWORD && body.password !== c.env.DEV_PASSWORD) {
-    throw new GameError('bad_password', 401, 'Mot de passe de test incorrect.');
-  }
   const admins = (c.env.DEV_ADMINS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  const user = await upsertDevUser(c.env.DB, name, admins.includes(name.toLowerCase()));
+  const user = await devLogin(c.env.DB, {
+    name,
+    isAdmin: admins.includes(name.toLowerCase()),
+    password: typeof body.password === 'string' ? body.password : undefined,
+    sitePassword: typeof body.sitePassword === 'string' ? body.sitePassword : undefined,
+    requiredSitePassword: c.env.DEV_PASSWORD,
+  });
   await startSession(c, user);
   return c.json(publicUser(user));
 });
@@ -160,6 +168,8 @@ app.use('/api/boosters/*', requireUser);
 app.use('/api/trades', requireUser);
 app.use('/api/trades/*', requireUser);
 app.use('/api/codes/*', requireUser);
+app.use('/api/profile', requireUser);
+app.use('/api/profile/*', requireUser);
 app.use('/api/admin/*', requireUser, requireAdmin);
 
 app.get('/api/me', (c) => c.json(publicUser(c.get('user'))));
@@ -174,9 +184,26 @@ app.get('/api/users', async (c) => c.json(await listUsers(c.env.DB)));
 
 app.get('/api/users/:id/collection', async (c) => {
   const id = idParam(c.req.param('id'), 'id');
-  const user = await getUser(c.env.DB, id);
-  if (!user) throw new GameError('user_not_found', 404, 'Joueur introuvable.');
-  return c.json({ user: { id: user.id, displayName: user.display_name }, cards: await listCollection(c.env.DB, id) });
+  const profile = await getProfile(c.env.DB, id);
+  if (!profile) throw new GameError('user_not_found', 404, 'Joueur introuvable.');
+  return c.json({ user: profile, cards: await listCollection(c.env.DB, id) });
+});
+
+// --- Profil -----------------------------------------------------------------
+
+app.get('/api/profile/options', (c) => c.json({ emojis: AVATAR_EMOJIS, colors: AVATAR_COLORS, maxBioLength: MAX_BIO_LENGTH }));
+
+app.post('/api/profile', async (c) => {
+  const body = await readJson(c);
+  const avatarEmoji = typeof body.avatarEmoji === 'string' ? body.avatarEmoji : '';
+  if (!(AVATAR_EMOJIS as readonly string[]).includes(avatarEmoji)) throw new GameError('bad_request', 400, 'Icône invalide.');
+  const avatarColor = typeof body.avatarColor === 'string' ? body.avatarColor : '';
+  if (!(AVATAR_COLORS as readonly string[]).includes(avatarColor)) throw new GameError('bad_request', 400, 'Couleur invalide.');
+  const bio = typeof body.bio === 'string' ? body.bio.trim() : '';
+  if (bio.length > MAX_BIO_LENGTH) throw new GameError('bad_request', 400, `La bio est limitée à ${MAX_BIO_LENGTH} caractères.`);
+  const featuredCardId = body.featuredCardId == null ? null : positiveInt(body.featuredCardId, 'featuredCardId');
+  await updateProfile(c.env.DB, c.get('user').id, { avatarEmoji, avatarColor, bio, featuredCardId });
+  return c.json(await getProfile(c.env.DB, c.get('user').id));
 });
 
 app.get('/api/collection', async (c) => c.json(await listCollection(c.env.DB, c.get('user').id)));

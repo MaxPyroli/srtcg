@@ -27,3 +27,22 @@ export const MAX_CODE_USES = 10_000;
 
 /** Durée de validité maximale d'un code de boosters, en heures (ici : 1 an). */
 export const MAX_CODE_HOURS = 24 * 365;
+
+/** Longueur maximale de la bio d'un profil (doit correspondre au CHECK de migrations/0004_profiles.sql). */
+export const MAX_BIO_LENGTH = 200;
+
+/**
+ * Icônes de profil disponibles. Pas d'upload d'image : en attendant l'univers du jeu,
+ * chacun choisit un emoji et une couleur dans une liste fixe.
+ */
+export const AVATAR_EMOJIS = [
+  '🙂', '😎', '🤖', '🐉', '🦊', '🐺', '🐸', '🐙', '🦉', '🦁',
+  '🐯', '🐼', '🦄', '🐲', '🎮', '🃏', '⚡', '🔥', '❄️', '🌊',
+  '🌙', '⭐', '🍀', '🍄', '🎯', '🎲', '🏆', '👾', '🧙', '🦾',
+  '🐧', '🦜', '🐨', '🐢', '🦋', '🌵', '🍉', '🍩', '☕', '💎',
+] as const;
+
+export const AVATAR_COLORS = [
+  '#2b59c3', '#b3261e', '#2f9e6e', '#d69a12', '#8a45d1',
+  '#3b6fd4', '#c2410c', '#0f766e', '#a21caf', '#475569',
+] as const;

@@ -3,6 +3,7 @@ import { RARITIES } from './types.ts';
 import type { Catalog, BoosterKind } from './draw.ts';
 import { drawBooster } from './draw.ts';
 import type { Rng } from './rng.ts';
+import { hashPassword, verifyPassword } from './auth.ts';
 
 // ---------------------------------------------------------------------------
 // Erreurs
@@ -102,33 +103,146 @@ export async function getUser(db: D1Database, id: number): Promise<UserRow | nul
     .first<UserRow>();
 }
 
-/** Connexion de test : crée ou retrouve un joueur à partir d'un pseudo. */
-export async function upsertDevUser(db: D1Database, name: string, isAdmin: boolean): Promise<UserRow> {
-  const twitchId = `dev:${name.toLowerCase()}`;
-  await db
-    .prepare(
-      `INSERT INTO users (twitch_id, display_name, is_admin) VALUES (?1, ?2, ?3)
-       ON CONFLICT (twitch_id) DO UPDATE SET display_name = excluded.display_name, is_admin = excluded.is_admin`,
-    )
-    .bind(twitchId, name, isAdmin ? 1 : 0)
-    .run();
+/** Mot de passe minimal pour la connexion de test : pas un vrai système de comptes, juste éviter le vide. */
+const DEV_PASSWORD_MIN_LENGTH = 4;
+
+/**
+ * Connexion de test : chaque pseudo a son propre mot de passe, choisi à la première connexion.
+ * Le mot de passe du site (DEV_PASSWORD) est une notion séparée : il ne fait que protéger la
+ * création d'un compte (ou la récupération d'un compte créé avant cette fonctionnalité), il ne
+ * devient jamais le mot de passe du joueur.
+ * - Nouveau pseudo : il devient le compte, avec le mot de passe personnel fourni.
+ * - Pseudo déjà utilisé mais sans mot de passe personnel (compte créé avant cette fonctionnalité) :
+ *   le mot de passe du site sert une dernière fois à le récupérer, puis il fixe son mot de passe personnel.
+ * - Pseudo avec mot de passe personnel : il doit correspondre.
+ */
+export async function devLogin(
+  db: D1Database,
+  input: { name: string; isAdmin: boolean; password: string | undefined; sitePassword: string | undefined; requiredSitePassword: string | undefined },
+): Promise<UserRow> {
+  const twitchId = `dev:${input.name.toLowerCase()}`;
+  const existing = await db
+    .prepare('SELECT id, twitch_id, display_name, is_admin, boosters, password_hash, password_salt FROM users WHERE twitch_id = ?1')
+    .bind(twitchId)
+    .first<UserRow & { password_hash: string | null; password_salt: string | null }>();
+
+  if (!existing || !existing.password_hash || !existing.password_salt) {
+    if (input.requiredSitePassword && input.sitePassword !== input.requiredSitePassword) {
+      throw new GameError('bad_site_password', 401, "Mot de passe d'accès au site incorrect.");
+    }
+    if (!input.password || input.password.length < DEV_PASSWORD_MIN_LENGTH) {
+      throw new GameError('weak_password', 400, `Choisis un mot de passe d'au moins ${DEV_PASSWORD_MIN_LENGTH} caractères.`);
+    }
+    const { hash, salt } = await hashPassword(input.password);
+    if (!existing) {
+      await db
+        .prepare('INSERT INTO users (twitch_id, display_name, is_admin, password_hash, password_salt) VALUES (?1, ?2, ?3, ?4, ?5)')
+        .bind(twitchId, input.name, input.isAdmin ? 1 : 0, hash, salt)
+        .run();
+    } else {
+      await db
+        .prepare('UPDATE users SET display_name = ?2, is_admin = ?3, password_hash = ?4, password_salt = ?5 WHERE twitch_id = ?1')
+        .bind(twitchId, input.name, input.isAdmin ? 1 : 0, hash, salt)
+        .run();
+    }
+  } else {
+    const ok = await verifyPassword(input.password ?? '', existing.password_hash, existing.password_salt);
+    if (!ok) throw new GameError('bad_password', 401, 'Mot de passe incorrect.');
+    await db
+      .prepare('UPDATE users SET display_name = ?2, is_admin = ?3 WHERE twitch_id = ?1')
+      .bind(twitchId, input.name, input.isAdmin ? 1 : 0)
+      .run();
+  }
+
   const user = await db
     .prepare('SELECT id, twitch_id, display_name, is_admin, boosters FROM users WHERE twitch_id = ?1')
     .bind(twitchId)
     .first<UserRow>();
-  if (!user) throw new Error('Création du joueur impossible');
+  if (!user) throw new Error('Connexion impossible');
   return user;
 }
 
 export async function listUsers(db: D1Database) {
   const { results } = await db
     .prepare(
-      `SELECT u.id, u.display_name AS displayName,
+      `SELECT u.id, u.display_name AS displayName, u.avatar_emoji AS avatarEmoji, u.avatar_color AS avatarColor,
               (SELECT COUNT(*) FROM collection c WHERE c.user_id = u.id AND c.quantity > 0) AS distinctCards
        FROM users u ORDER BY u.display_name COLLATE NOCASE LIMIT 200`,
     )
-    .all<{ id: number; displayName: string; distinctCards: number }>();
+    .all<{ id: number; displayName: string; avatarEmoji: string; avatarColor: string; distinctCards: number }>();
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// Profils
+// ---------------------------------------------------------------------------
+
+export interface ProfileRow {
+  id: number;
+  displayName: string;
+  isAdmin: number;
+  avatarEmoji: string;
+  avatarColor: string;
+  bio: string;
+  createdAt: string;
+  distinctCards: number;
+  totalCards: number;
+  boostersOpened: number;
+  tradesCompleted: number;
+  featuredCard: { id: number; name: string; rarity: Rarity } | null;
+}
+
+export async function getProfile(db: D1Database, userId: number): Promise<ProfileRow | null> {
+  const row = await db
+    .prepare(
+      `SELECT u.id, u.display_name AS displayName, u.is_admin AS isAdmin,
+              u.avatar_emoji AS avatarEmoji, u.avatar_color AS avatarColor, u.bio, u.created_at AS createdAt,
+              (SELECT COUNT(*) FROM collection c WHERE c.user_id = u.id AND c.quantity > 0) AS distinctCards,
+              (SELECT COALESCE(SUM(quantity), 0) FROM collection c WHERE c.user_id = u.id) AS totalCards,
+              (SELECT COUNT(*) FROM openings o WHERE o.user_id = u.id) AS boostersOpened,
+              (SELECT COUNT(*) FROM trades t WHERE (t.from_user = u.id OR t.to_user = u.id) AND t.status = 'accepted') AS tradesCompleted,
+              fc.id AS featuredCardId, fc.name AS featuredCardName, fc.rarity AS featuredCardRarity
+       FROM users u
+       LEFT JOIN collection fcol ON fcol.user_id = u.id AND fcol.card_id = u.featured_card_id AND fcol.quantity >= 1
+       LEFT JOIN cards fc ON fc.id = fcol.card_id
+       WHERE u.id = ?1`,
+    )
+    .bind(userId)
+    .first<
+      Omit<ProfileRow, 'featuredCard'> & {
+        featuredCardId: number | null;
+        featuredCardName: string | null;
+        featuredCardRarity: Rarity | null;
+      }
+    >();
+  if (!row) return null;
+  const { featuredCardId, featuredCardName, featuredCardRarity, ...rest } = row;
+  return {
+    ...rest,
+    featuredCard: featuredCardId != null ? { id: featuredCardId, name: featuredCardName as string, rarity: featuredCardRarity as Rarity } : null,
+  };
+}
+
+export interface ProfileInput {
+  avatarEmoji: string;
+  avatarColor: string;
+  bio: string;
+  featuredCardId: number | null;
+}
+
+/** Met à jour son propre profil. La carte vedette doit être une carte réellement possédée. */
+export async function updateProfile(db: D1Database, userId: number, input: ProfileInput): Promise<void> {
+  if (input.featuredCardId != null) {
+    const owned = await db
+      .prepare('SELECT 1 FROM collection WHERE user_id = ?1 AND card_id = ?2 AND quantity >= 1')
+      .bind(userId, input.featuredCardId)
+      .first();
+    if (!owned) throw new GameError('featured_not_owned', 409, 'Tu ne possèdes pas cette carte.');
+  }
+  await db
+    .prepare('UPDATE users SET avatar_emoji = ?2, avatar_color = ?3, bio = ?4, featured_card_id = ?5 WHERE id = ?1')
+    .bind(userId, input.avatarEmoji, input.avatarColor, input.bio, input.featuredCardId)
+    .run();
 }
 
 // ---------------------------------------------------------------------------

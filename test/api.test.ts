@@ -34,8 +34,8 @@ async function call(method: string, path: string, opts: { body?: unknown; cookie
   return { status: res.status, json, headers: res.headers };
 }
 
-async function login(name: string) {
-  const res = await call('POST', '/api/dev/login', { body: { name } });
+async function login(name: string, password = 'password123') {
+  const res = await call('POST', '/api/dev/login', { body: { name, password } });
   expect(res.status).toBe(200);
   const cookie = (res.headers.get('set-cookie') ?? '').split(';')[0];
   return { cookie, id: res.json.id as number };
@@ -65,10 +65,43 @@ describe('connexion', () => {
     expect(res.status).toBe(404);
   });
 
-  it('exige le mot de passe de test quand il est défini', async () => {
+  it('le mot de passe du site protège la création d\'un nouveau compte, mais reste distinct du mot de passe choisi', async () => {
     env.DEV_PASSWORD = 'sesame';
-    expect((await call('POST', '/api/dev/login', { body: { name: 'alice' } })).status).toBe(401);
-    expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'sesame' } })).status).toBe(200);
+    // Sans le mot de passe du site : refusé, quel que soit le mot de passe personnel choisi.
+    expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'toto1234' } })).status).toBe(401);
+    // Avec le mot de passe du site, on choisit son propre mot de passe (différent) pour le compte.
+    const res = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'toto1234', sitePassword: 'sesame' } });
+    expect(res.status).toBe(200);
+    // Les connexions suivantes n'ont besoin que du mot de passe personnel, pas de celui du site.
+    expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'toto1234' } })).status).toBe(200);
+  });
+
+  it('refuse un mot de passe trop court à la création du compte', async () => {
+    const res = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'abc' } });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('weak_password');
+  });
+
+  it('chaque joueur a son propre mot de passe : celui d\'un autre ne fonctionne pas', async () => {
+    await login('alice', 'motdepassealice');
+    await login('bob', 'motdepassebob');
+    const res = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepassebob' } });
+    expect(res.status).toBe(401);
+    expect(res.json.error).toBe('bad_password');
+    expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepassealice' } })).status).toBe(200);
+  });
+
+  it('un compte créé avant cette fonctionnalité (sans mot de passe personnel) se récupère avec le mot de passe du site', async () => {
+    env.DEV_PASSWORD = 'sesame';
+    db.exec("INSERT INTO users (twitch_id, display_name) VALUES ('dev:ancien', 'ancien')");
+    const wrong = await call('POST', '/api/dev/login', { body: { name: 'ancien', password: 'monproprepass' } });
+    expect(wrong.status).toBe(401);
+    const claimed = await call('POST', '/api/dev/login', { body: { name: 'ancien', password: 'monproprepass', sitePassword: 'sesame' } });
+    expect(claimed.status).toBe(200);
+    // Une fois récupéré, seul le mot de passe personnel compte, plus celui du site.
+    const second = await call('POST', '/api/dev/login', { body: { name: 'ancien', password: 'monproprepass' } });
+    expect(second.status).toBe(200);
+    expect(second.json.id).toBe(claimed.json.id);
   });
 
   it('connecte un joueur et retrouve son profil', async () => {
@@ -231,6 +264,120 @@ describe('vue d\'ensemble admin', () => {
     const created = await call('POST', '/api/admin/codes', { cookie: chef.cookie, body: { boosters: 1, maxUses: 1 } });
     const list = await call('GET', '/api/admin/codes', { cookie: chef.cookie });
     expect(list.json[0]).toMatchObject({ code: created.json.code, createdByName: 'chef', uses: 0 });
+  });
+});
+
+describe('profils', () => {
+  it('valeurs par défaut à la création du compte', async () => {
+    const alice = await login('alice');
+    const res = await call('GET', `/api/users/${alice.id}/collection`, { cookie: alice.cookie });
+    expect(res.json.user).toMatchObject({
+      displayName: 'alice',
+      avatarEmoji: '🙂',
+      avatarColor: '#2b59c3',
+      bio: '',
+      distinctCards: 0,
+      totalCards: 0,
+      boostersOpened: 0,
+      tradesCompleted: 0,
+      featuredCard: null,
+    });
+  });
+
+  it('modifie son propre profil : icône, couleur, bio', async () => {
+    const alice = await login('alice');
+    const res = await call('POST', '/api/profile', {
+      cookie: alice.cookie,
+      body: { avatarEmoji: '🐉', avatarColor: '#b3261e', bio: 'Salut, je collectionne les rares.' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ avatarEmoji: '🐉', avatarColor: '#b3261e', bio: 'Salut, je collectionne les rares.' });
+  });
+
+  it('refuse une icône ou une couleur hors de la liste', async () => {
+    const alice = await login('alice');
+    const bad1 = await call('POST', '/api/profile', { cookie: alice.cookie, body: { avatarEmoji: '💩', avatarColor: '#2b59c3', bio: '' } });
+    expect(bad1.status).toBe(400);
+    const bad2 = await call('POST', '/api/profile', { cookie: alice.cookie, body: { avatarEmoji: '🙂', avatarColor: '#000000', bio: '' } });
+    expect(bad2.status).toBe(400);
+  });
+
+  it('refuse une bio trop longue', async () => {
+    const alice = await login('alice');
+    const res = await call('POST', '/api/profile', {
+      cookie: alice.cookie,
+      body: { avatarEmoji: '🙂', avatarColor: '#2b59c3', bio: 'x'.repeat(201) },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('la carte vedette doit être possédée, et se reflète dans le profil public', async () => {
+    const alice = await login('alice');
+    const bob = await login('bob');
+    const withoutCard = await call('POST', '/api/profile', {
+      cookie: alice.cookie,
+      body: { avatarEmoji: '🙂', avatarColor: '#2b59c3', bio: '', featuredCardId: RARE },
+    });
+    expect(withoutCard.status).toBe(409);
+    expect(withoutCard.json.error).toBe('featured_not_owned');
+
+    give(alice.id, RARE);
+    const withCard = await call('POST', '/api/profile', {
+      cookie: alice.cookie,
+      body: { avatarEmoji: '🙂', avatarColor: '#2b59c3', bio: '', featuredCardId: RARE },
+    });
+    expect(withCard.status).toBe(200);
+    expect(withCard.json.featuredCard).toMatchObject({ id: RARE, name: 'Rare 01', rarity: 'rare' });
+
+    const seenByBob = await call('GET', `/api/users/${alice.id}/collection`, { cookie: bob.cookie });
+    expect(seenByBob.json.user.featuredCard).toMatchObject({ id: RARE, name: 'Rare 01', rarity: 'rare' });
+  });
+
+  it('une carte vedette perdue (échangée) disparaît du profil sans erreur', async () => {
+    const alice = await login('alice');
+    const bob = await login('bob');
+    give(alice.id, RARE);
+    give(bob.id, 87); // une autre rare, pour l'échange
+    await call('POST', '/api/profile', { cookie: alice.cookie, body: { avatarEmoji: '🙂', avatarColor: '#2b59c3', bio: '', featuredCardId: RARE } });
+
+    const trade = await call('POST', '/api/trades', { cookie: alice.cookie, body: { toUserId: bob.id, offeredCardId: RARE, requestedCardId: 87 } });
+    await call('POST', `/api/trades/${trade.json.id}/accept`, { cookie: bob.cookie });
+
+    const res = await call('GET', `/api/users/${alice.id}/collection`, { cookie: alice.cookie });
+    expect(res.status).toBe(200);
+    expect(res.json.user.featuredCard).toBeNull();
+  });
+
+  it('les statistiques du profil reflètent boosters, cartes et échanges', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: alice.id, amount: 2 } });
+    await call('POST', '/api/boosters/open', { cookie: alice.cookie });
+    give(alice.id, COMMUNE_A);
+    give(chef.id, COMMUNE_B);
+    const trade = await call('POST', '/api/trades', { cookie: alice.cookie, body: { toUserId: chef.id, offeredCardId: COMMUNE_A, requestedCardId: COMMUNE_B } });
+    await call('POST', `/api/trades/${trade.json.id}/accept`, { cookie: chef.cookie });
+
+    const res = await call('GET', `/api/users/${alice.id}/collection`, { cookie: alice.cookie });
+    expect(res.json.user.boostersOpened).toBe(1);
+    expect(res.json.user.tradesCompleted).toBe(1);
+    expect(res.json.user.totalCards).toBeGreaterThanOrEqual(5);
+  });
+
+  it('expose les icônes et couleurs disponibles', async () => {
+    const alice = await login('alice');
+    const res = await call('GET', '/api/profile/options', { cookie: alice.cookie });
+    expect(res.status).toBe(200);
+    expect(res.json.emojis).toContain('🙂');
+    expect(res.json.colors).toContain('#2b59c3');
+    expect(res.json.maxBioLength).toBe(200);
+  });
+
+  it('la liste des joueurs inclut l\'icône de profil', async () => {
+    const alice = await login('alice');
+    await call('POST', '/api/profile', { cookie: alice.cookie, body: { avatarEmoji: '🦊', avatarColor: '#3b6fd4', bio: '' } });
+    const res = await call('GET', '/api/users', { cookie: alice.cookie });
+    expect(res.json.find((p: any) => p.id === alice.id)).toMatchObject({ avatarEmoji: '🦊', avatarColor: '#3b6fd4' });
   });
 });
 
