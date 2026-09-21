@@ -51,6 +51,7 @@
 
   /* Cartes */
   .cards { display: flex; flex-wrap: wrap; gap: 14px; }
+  .cards[hidden] { display: none; }
   .card {
     position: relative; width: 128px; height: 176px; padding: 12px 10px;
     background: #fff; border: 3px solid var(--c); border-radius: 10px;
@@ -74,8 +75,43 @@
   .flip-back { background: repeating-linear-gradient(45deg, #26303d, #26303d 8px, #2e3a49 8px, #2e3a49 16px); border: 3px solid #1b2430; }
   .flip-front { transform: rotateY(180deg); }
   .flip-front .card { width: 100%; height: 100%; }
-  @media (prefers-reduced-motion: reduce) { .flip-inner { transition: none; } }
   .annonce { font-weight: 700; font-size: 1.15rem; margin: 14px 0 0; color: var(--secrete); }
+
+  /* Paquet fermé, à toucher pour l'ouvrir */
+  .pack { display: flex; justify-content: center; margin: 6px 0 18px; }
+  .pack[hidden] { display: none; }
+  .pack-btn {
+    width: 128px; height: 176px; padding: 0; border: 3px solid #1b2430; border-radius: 10px;
+    background: repeating-linear-gradient(45deg, #26303d, #26303d 8px, #2e3a49 8px, #2e3a49 16px);
+    color: #fff; font-weight: 600; font-size: .82rem;
+  }
+  .pack.shake .pack-btn { animation: pack-shake .5s ease; }
+  .pack.burst .pack-btn { animation: pack-burst .26s ease forwards; }
+  @keyframes pack-shake {
+    10%, 90% { transform: translateX(-1px) rotate(-1deg); }
+    20%, 80% { transform: translateX(2px) rotate(1deg); }
+    30%, 50%, 70% { transform: translateX(-4px) rotate(-2deg); }
+    40%, 60% { transform: translateX(4px) rotate(2deg); }
+  }
+  @keyframes pack-burst { to { transform: scale(1.3); opacity: 0; } }
+
+  /* Pile de cartes révélées une par une */
+  .stack { position: relative; width: 128px; height: 176px; margin: 6px auto 18px; }
+  .stack .flip { position: absolute; inset: 0; transition: transform .25s ease, opacity .4s ease; }
+  .stack .flip.flyout { transform: translate(170px, -34px) rotate(18deg) !important; opacity: 0; }
+  .stack .flip.flash .flip-front .card { animation: card-flash .7s ease; }
+  .stack .flip:nth-child(1) { z-index: 5; transform: translate(0, 0) rotate(0deg); }
+  .stack .flip:nth-child(2) { z-index: 4; transform: translate(4px, 6px) rotate(-2deg); }
+  .stack .flip:nth-child(3) { z-index: 3; transform: translate(8px, 12px) rotate(-4deg); }
+  .stack .flip:nth-child(4) { z-index: 2; transform: translate(12px, 18px) rotate(-6deg); }
+  .stack .flip:nth-child(5) { z-index: 1; transform: translate(16px, 24px) rotate(-8deg); }
+  @keyframes card-flash { 0%, 100% { box-shadow: 0 0 16px var(--c); } 40% { box-shadow: 0 0 46px var(--c); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .flip-inner { transition: none; }
+    .pack.shake .pack-btn, .pack.burst .pack-btn, .stack .flip.flash .flip-front .card { animation: none; }
+    .stack .flip { transition: none; }
+  }
 
   .filtres { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
   .filtres button[aria-pressed="true"] { background: var(--encre); color: #fff; border-color: var(--encre); }
@@ -131,7 +167,11 @@
       <p id="boosterInfo" class="muted"></p>
       <p><button id="openBtn" class="primary" type="button">Ouvrir un booster</button>
          <button id="revealAll" class="secondary" type="button" hidden>Tout révéler</button></p>
-      <div id="reveal" class="cards" aria-live="polite"></div>
+      <div id="pack" class="pack" hidden>
+        <button id="packBtn" class="pack-btn" type="button">Toucher pour ouvrir</button>
+      </div>
+      <div id="stack" class="stack" hidden aria-live="polite"></div>
+      <div id="revealedRow" class="cards" hidden></div>
       <p id="announce" class="annonce" role="status"></p>
     </div>
 
@@ -331,23 +371,58 @@ $('#openBtn').addEventListener('click', async (event) => {
   await guarded(event.currentTarget, async () => {
     const opened = await api('POST', '/api/boosters/open');
     state.me.boosters = opened.boostersLeft;
-    showReveal(opened);
+    startReveal(opened);
   });
   // Le bouton reste désactivé s'il ne reste aucun booster
   renderWho();
 });
 
-function showReveal(opened) {
-  const zone = $('#reveal');
-  zone.replaceChildren();
-  $('#announce').textContent = '';
-  let flipped = 0;
+const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const revealDelay = (ms) => (reducedMotion ? 0 : ms);
+const FLASHY = { rare: true, legendaire: true, secrete: true };
 
-  const finish = () => {
-    $('#revealAll').hidden = true;
-    if (opened.kind === 'god') $('#announce').textContent = 'God Pack !';
-    if (opened.kind === 'secret') $('#announce').textContent = 'Carte secrète !';
+/** Étape 1 : un paquet fermé à toucher pour l'ouvrir. */
+function startReveal(opened) {
+  $('#openBtn').hidden = true;
+  $('#announce').textContent = '';
+  const revealedRow = $('#revealedRow');
+  revealedRow.hidden = true;
+  revealedRow.replaceChildren();
+  $('#stack').hidden = true;
+  $('#stack').replaceChildren();
+
+  const pack = $('#pack');
+  pack.hidden = false;
+  pack.className = 'pack';
+  const packBtn = $('#packBtn');
+  packBtn.disabled = false;
+  packBtn.onclick = () => {
+    if (packBtn.disabled) return;
+    packBtn.disabled = true;
+    pack.classList.add('shake');
+    setTimeout(() => {
+      pack.classList.add('burst');
+      setTimeout(() => {
+        pack.hidden = true;
+        beginStack(opened);
+      }, revealDelay(260));
+    }, revealDelay(500));
   };
+
+  $('#revealAll').hidden = false;
+  $('#revealAll').onclick = () => {
+    pack.hidden = true;
+    $('#stack').hidden = true;
+    showFinalRow(opened);
+  };
+}
+
+/** Étape 2 : les 5 cartes empilées, révélées une par une (la carte du dessus s'envole une fois vue). */
+function beginStack(opened) {
+  const stack = $('#stack');
+  stack.hidden = false;
+  stack.replaceChildren();
+  let revealed = 0;
 
   const buttons = opened.cards.map((card) => {
     const button = h('button', {
@@ -355,10 +430,23 @@ function showReveal(opened) {
       class: 'flip',
       'aria-label': 'Révéler la carte',
       onclick: () => {
-        if (button.classList.contains('open')) return;
+        if (button !== buttons[revealed] || button.classList.contains('open')) return;
         button.classList.add('open');
         button.setAttribute('aria-label', `${card.name}, ${RARITIES[card.rarity]}`);
-        if (++flipped === opened.cards.length) finish();
+        if (FLASHY[card.rarity]) button.classList.add('flash');
+        setTimeout(() => {
+          button.classList.add('flyout');
+          $('#revealedRow').hidden = false;
+          $('#revealedRow').append(cardView(card));
+          setTimeout(() => {
+            button.remove();
+            revealed++;
+            if (revealed === buttons.length) {
+              stack.hidden = true;
+              showFinalRow(opened, true);
+            }
+          }, revealDelay(420));
+        }, revealDelay(700));
       },
     },
       h('div', { class: 'flip-inner' },
@@ -367,9 +455,22 @@ function showReveal(opened) {
     return button;
   });
 
-  zone.append(...buttons);
-  $('#revealAll').hidden = false;
-  $('#revealAll').onclick = () => buttons.forEach((b) => b.click());
+  stack.append(...buttons);
+  $('#revealAll').onclick = () => {
+    stack.hidden = true;
+    showFinalRow(opened);
+  };
+}
+
+/** Étape 3 : les 5 cartes révélées, en ligne (atteint aussi via « Tout révéler »). */
+function showFinalRow(opened, alreadyBuilt = false) {
+  $('#revealAll').hidden = true;
+  $('#openBtn').hidden = false;
+  const row = $('#revealedRow');
+  if (!alreadyBuilt) row.replaceChildren(...opened.cards.map((c) => cardView(c)));
+  row.hidden = false;
+  if (opened.kind === 'god') $('#announce').textContent = 'God Pack !';
+  if (opened.kind === 'secret') $('#announce').textContent = 'Carte secrète !';
 }
 
 // --- Collection ------------------------------------------------------------
