@@ -54,10 +54,22 @@ artistique qui viendra après le fonctionnement. Les 101 cartes actuelles sont d
 - Sessions : cookie signé (HMAC) contenant l'identifiant du joueur. La connexion Twitch devra produire le même cookie.
 - `DEV_AUTH` (connexion de test sans Twitch) doit rester à `"0"` en production. Ne jamais commiter de secret
   (`.dev.vars` est ignoré par Git).
-- Twitch, à valider au moment de coder (l'API évolue) : follow via la permission `user:read:follows` du joueur ;
-  abonnement via la permission `channel:read:subscriptions` accordée une fois par le streamer ; notifications
-  d'abonnement par EventSub (adresse HTTPS sur le port 443, vérification de la signature HMAC-SHA256, réponse au
-  défi initial, déduplication sur l'identifiant du message, réponse en quelques secondes).
+- Twitch (vérifié le 21/09/2026 sur dev.twitch.tv ; l'API évolue, revalider avant de coder) :
+  - **Abonnement (sub)** : scope `channel:read:subscriptions`, autorisé **une seule fois par le streamer**
+    (pas par chaque joueur). Vérifier un joueur précis : `GET /subscriptions` avec son `user_id`.
+  - **Follow** : ⚠️ correction d'une erreur de ce fichier — ce n'est plus `user:read:follows` (Twitch a supprimé
+    cette permission en 2023 pour la vie privée). Le bon scope est `moderator:read:followers`, autorisé **une
+    seule fois par le streamer ou un modérateur** (pas par le joueur non plus). Vérifier un joueur précis :
+    `GET /channels/followers` avec son `user_id`. Donc follow et abonnement se vérifient tous les deux via une
+    autorisation unique du streamer/modérateur : la connexion d'un joueur n'a besoin d'aucun scope particulier
+    côté joueur, juste de son identité.
+  - **Connexion d'un joueur** : OAuth Authorization Code vers `id.twitch.tv/oauth2/authorize`, puis échange du
+    code contre un jeton sur `id.twitch.tv/oauth2/token` (`client_id`, `client_secret` côté serveur, `redirect_uri`
+    identique aux deux étapes). Prévoir le jeton de rafraîchissement (`grant_type=refresh_token`).
+  - **EventSub (notifications d'abonnement)** : webhooks HTTPS (port 443) ; signature HMAC-SHA256 calculée sur
+    `Twitch-Eventsub-Message-Id` + `Twitch-Eventsub-Message-Timestamp` + le **corps brut** de la requête (ne pas
+    re-sérialiser le JSON : ça change les octets et casse la signature) ; répondre au défi initial ; dédupliquer
+    sur l'identifiant du message ; répondre en quelques secondes.
 - Hébergement : Cloudflare avec le nom de domaine du propriétaire (le DNS peut être confié à Cloudflare).
   Mise en ligne prévue par GitHub + Workers Builds (déploiement à chaque `git push`, liens de test par branche).
 

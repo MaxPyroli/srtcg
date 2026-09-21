@@ -62,6 +62,23 @@ npm run smoke       # parcours complet contre le serveur lancé par « npm run d
 Le rattachement du nom de domaine se fait ensuite dans Cloudflare (Workers, réglages du Worker,
 domaines personnalisés). Le plus simple est que le DNS du domaine soit géré par Cloudflare.
 
+### Déploiement automatique à chaque push (optionnel)
+
+Jusqu'ici, la mise en ligne se fait à la main (`npm run deploy`). Pour que Cloudflare déploie automatiquement
+à chaque `git push` (avec des liens de test par branche), il faut connecter le dépôt GitHub depuis le tableau
+de bord Cloudflare — cette étape demande une autorisation interactive et ne peut pas être automatisée :
+
+1. Dans le [tableau de bord Cloudflare](https://dash.cloudflare.com), ouvrir **Workers & Pages** → le Worker
+   `tcg-communaute` → **Settings** → **Builds** → **Connect**.
+2. Autoriser l'accès Cloudflare au dépôt GitHub `MaxPyroli/srtcg` (installation de l'app GitHub Cloudflare Workers).
+3. Vérifier la configuration proposée (commande de build : aucune, ce projet n'en a pas besoin ; commande de
+   déploiement : `npx wrangler deploy`).
+4. Les secrets (`SESSION_SECRET`, `DEV_PASSWORD`) doivent être redéfinis dans **Settings → Variables and Secrets**
+   du Worker si ce n'est pas déjà fait ailleurs : les secrets ne sont jamais lus depuis `wrangler.jsonc` ou le dépôt.
+
+Une fois connecté, chaque `git push` sur la branche principale redéploie automatiquement, et les autres
+branches obtiennent un lien de prévisualisation.
+
 ## Comment c'est construit
 
 ```
