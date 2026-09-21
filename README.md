@@ -54,13 +54,14 @@ npm run smoke       # parcours complet contre le serveur lancé par « npm run d
    npx wrangler secret put SESSION_SECRET      # coller la valeur générée
    ```
 5. Pour un **test privé uniquement**, activer la connexion de test :
-   dans `wrangler.jsonc`, passer `"DEV_AUTH"` à `"1"` et ajouter `"DEV_ADMINS": "admin"` dans `vars`,
-   puis protéger l'accès : `npx wrangler secret put DEV_PASSWORD`.
+   dans `wrangler.jsonc`, passer `"DEV_AUTH"` à `"1"` et ajouter `"DEV_ADMINS": "admin"` dans `vars`.
 6. `npm run deploy`
 
-> **Attention** : la connexion de test permet de se faire passer pour n'importe quel joueur.
-> Elle est coupée par défaut et doit rester coupée dès que le jeu est ouvert à la communauté.
-> Elle sera remplacée par la connexion Twitch.
+> **Attention** : la connexion de test est coupée par défaut et doit rester coupée dès que le jeu est
+> ouvert à la communauté. Elle sera remplacée par la connexion Twitch. Chaque pseudo a son propre mot
+> de passe (choisi librement à la première connexion, comme un pseudo Discord) : un joueur ne peut
+> pas se faire passer pour un autre sans connaître son mot de passe. Si un joueur oublie le sien,
+> un admin peut le réinitialiser depuis l'onglet Administration.
 
 Le rattachement du nom de domaine se fait ensuite dans Cloudflare (Workers, réglages du Worker,
 domaines personnalisés). Le plus simple est que le DNS du domaine soit géré par Cloudflare.
@@ -76,8 +77,8 @@ de bord Cloudflare — cette étape demande une autorisation interactive et ne p
 2. Autoriser l'accès Cloudflare au dépôt GitHub `MaxPyroli/srtcg` (installation de l'app GitHub Cloudflare Workers).
 3. Vérifier la configuration proposée (commande de build : aucune, ce projet n'en a pas besoin ; commande de
    déploiement : `npx wrangler deploy`).
-4. Les secrets (`SESSION_SECRET`, `DEV_PASSWORD`) doivent être redéfinis dans **Settings → Variables and Secrets**
-   du Worker si ce n'est pas déjà fait ailleurs : les secrets ne sont jamais lus depuis `wrangler.jsonc` ou le dépôt.
+4. Le secret `SESSION_SECRET` doit être redéfini dans **Settings → Variables and Secrets** du Worker si ce
+   n'est pas déjà fait ailleurs : les secrets ne sont jamais lus depuis `wrangler.jsonc` ou le dépôt.
 
 Une fois connecté, chaque `git push` sur la branche principale redéploie automatiquement, et les autres
 branches obtiennent un lien de prévisualisation.

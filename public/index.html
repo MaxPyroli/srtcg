@@ -54,10 +54,20 @@
   .cards { display: flex; flex-wrap: wrap; gap: 14px; }
   .cards[hidden] { display: none; }
   .card {
-    position: relative; width: 128px; height: 176px; padding: 12px 10px;
+    position: relative; width: 128px; height: 176px; padding: 10px;
     background: #fff; border: 3px solid var(--c); border-radius: 10px;
-    display: flex; flex-direction: column; justify-content: space-between; text-align: left;
+    display: flex; flex-direction: column; gap: 8px; text-align: left;
   }
+  .card .art {
+    width: 100%; height: 86px; border-radius: 6px; flex: none; overflow: hidden;
+    background: color-mix(in srgb, var(--c) 30%, white);
+    display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px;
+  }
+  .card .art-label {
+    font-weight: 800; font-size: .6rem; line-height: 1.3; letter-spacing: .03em; text-transform: uppercase;
+    color: color-mix(in srgb, var(--c) 60%, white);
+  }
+  .card .texte { display: flex; flex-direction: column; justify-content: space-between; flex: 1; min-height: 0; }
   .card .nom { font-weight: 600; }
   .card .rar { font-size: .85rem; color: var(--c); font-weight: 600; }
   .card .qte { position: absolute; top: -10px; right: -10px; background: var(--encre); color: #fff; border-radius: 999px; min-width: 28px; padding: 1px 8px; font-size: .85rem; text-align: center; }
@@ -162,9 +172,6 @@
       </label>
       <label>Ton mot de passe
         <input id="loginPw" type="password" required minlength="4" autocomplete="off">
-      </label>
-      <label id="siteRow">Mot de passe du site (seulement pour créer un compte, si demandé)
-        <input id="loginSitePw" type="password" autocomplete="off">
       </label>
       <button class="primary" type="submit">Se connecter</button>
     </form>
@@ -284,6 +291,11 @@
           <input id="grantAmount" type="number" min="1" max="100" value="5">
         </label>
         <button id="grantBtn" class="primary" type="button">Offrir</button>
+
+        <h2 style="margin-top:28px">Gestion des comptes</h2>
+        <p class="muted">Réinitialiser efface le mot de passe d'un joueur : il en choisit un nouveau à sa
+          prochaine connexion. Supprimer est définitif (compte, collection, échanges, codes créés).</p>
+        <ul id="accountList" class="liste"></ul>
       </div>
 
       <div id="admin-codes" hidden>
@@ -395,10 +407,12 @@ async function guarded(button, action) {
 function cardView(card, { quantity, reserved } = {}) {
   return h('div', { class: `card r-${card.rarity}` },
     quantity > 1 ? h('span', { class: 'qte' }, `×${quantity}`) : null,
-    h('span', { class: 'nom' }, card.name),
-    h('span', {},
-      h('span', { class: 'rar' }, RARITIES[card.rarity]),
-      reserved > 0 ? h('div', { class: 'res' }, `${reserved} bloquée${reserved > 1 ? 's' : ''} par un échange`) : null));
+    h('div', { class: 'art' }, h('span', { class: 'art-label' }, 'New art', h('br'), 'coming soon')),
+    h('div', { class: 'texte' },
+      h('span', { class: 'nom' }, card.name),
+      h('span', {},
+        h('span', { class: 'rar' }, RARITIES[card.rarity]),
+        reserved > 0 ? h('div', { class: 'res' }, `${reserved} bloquée${reserved > 1 ? 's' : ''} par un échange`) : null)));
 }
 
 // --- Connexion -------------------------------------------------------------
@@ -433,7 +447,6 @@ $('#loginForm').addEventListener('submit', async (event) => {
     const me = await api('POST', '/api/dev/login', {
       name: $('#loginName').value.trim(),
       password: $('#loginPw').value || undefined,
-      sitePassword: $('#loginSitePw').value || undefined,
     });
     await enterGame(me);
   } catch (error) {
@@ -472,7 +485,7 @@ function showTab(name) {
   if (name === 'trades') refreshTrades();
   if (name === 'profiles') refreshProfilesTab();
   if (name === 'admin') {
-    refreshPlayers().then(renderGrantUsers);
+    refreshPlayers().then(() => { renderGrantUsers(); renderAccountList(); });
     refreshBoosterCodes();
     refreshAdminOverview();
   }
@@ -851,6 +864,31 @@ $('#grantBtn').addEventListener('click', (event) => guarded(event.currentTarget,
   say(`${amount} booster${amount > 1 ? 's' : ''} offert${amount > 1 ? 's' : ''}.`);
 }));
 
+function renderAccountList() {
+  $('#accountList').replaceChildren(...(state.players.length ? state.players.map((p) => h('li', {},
+    h('span', {}, p.displayName),
+    h('span', { class: 'actions' },
+      h('button', {
+        type: 'button', class: 'secondary',
+        onclick: (e) => guarded(e.currentTarget, async () => {
+          await api('POST', `/api/admin/users/${p.id}/reset-password`);
+          say(`Mot de passe de ${p.displayName} réinitialisé.`);
+        }),
+      }, 'Réinitialiser le mot de passe'),
+      h('button', {
+        type: 'button', class: 'secondary',
+        onclick: (e) => guarded(e.currentTarget, async () => {
+          if (!confirm(`Supprimer définitivement le compte de ${p.displayName} ? Sa collection et ses échanges disparaissent aussi. C'est irréversible.`)) return;
+          await api('DELETE', `/api/admin/users/${p.id}`);
+          say(`Compte de ${p.displayName} supprimé.`);
+          await refreshPlayers();
+          renderGrantUsers();
+          renderAccountList();
+        }),
+      }, 'Supprimer')))
+  ) : [h('li', { class: 'muted' }, 'Aucun joueur pour le moment.')]));
+}
+
 /** Formate une date SQLite ('YYYY-MM-DD HH:MM:SS', UTC) en heure locale. */
 function fmtDate(s) {
   if (!s) return '';
@@ -911,7 +949,12 @@ function renderAdminStats(stats) {
   );
 }
 
-const ADMIN_ACTIONS = { grant_boosters: 'Boosters offerts', create_code: 'Code créé' };
+const ADMIN_ACTIONS = {
+  grant_boosters: 'Boosters offerts',
+  create_code: 'Code créé',
+  reset_password: 'Mot de passe réinitialisé',
+  delete_user: 'Compte supprimé',
+};
 
 function renderAdminLog(entries) {
   $('#adminLogList').replaceChildren(...(entries.length ? entries.map((l) => {
@@ -920,6 +963,7 @@ function renderAdminLog(entries) {
       const d = JSON.parse(l.details || '{}');
       if (l.action === 'grant_boosters') detail = `${d.amount} booster${d.amount > 1 ? 's' : ''}`;
       if (l.action === 'create_code') detail = `${d.code} (${d.boosters} booster${d.boosters > 1 ? 's' : ''} × ${d.maxUses})`;
+      if (l.action === 'delete_user') detail = d.displayName;
     } catch { /* détails illisibles : on affiche juste l'action */ }
     return h('li', {}, h('span', {},
       `${fmtDate(l.createdAt)} — ${l.adminName} : ${ADMIN_ACTIONS[l.action] || l.action}`,

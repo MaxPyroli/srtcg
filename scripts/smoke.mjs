@@ -5,13 +5,11 @@
  *   npm run smoke -- https://mon-test.example  # une autre adresse
  *
  * Le Worker doit avoir DEV_AUTH=1 et "admin" dans DEV_ADMINS (connexion de test).
- * Chaque pseudo a son propre mot de passe (SMOKE_PASSWORD, "smoke-test" par défaut) ; si le compte
- * "admin" existe déjà sans mot de passe personnel (créé avant cette fonctionnalité) ou si le site
- * en exige un pour créer un compte, passer aussi DEV_PASSWORD=... npm run smoke.
+ * Chaque pseudo a son propre mot de passe (SMOKE_PASSWORD, "smoke-test" par défaut). Si le compte
+ * "admin" a déjà un mot de passe différent sur le serveur visé, passer SMOKE_PASSWORD=... npm run smoke.
  */
 const BASE = (process.argv[2] ?? 'http://localhost:8787').replace(/\/$/, '');
 const PASSWORD = process.env.SMOKE_PASSWORD ?? 'smoke-test';
-const SITE_PASSWORD = process.env.DEV_PASSWORD;
 const suffix = Math.random().toString(36).slice(2, 7);
 
 let failures = 0;
@@ -33,7 +31,7 @@ async function api(method, path, { body, cookie } = {}) {
 }
 
 async function login(name) {
-  const res = await api('POST', '/api/dev/login', { body: { name, password: PASSWORD, ...(SITE_PASSWORD ? { sitePassword: SITE_PASSWORD } : {}) } });
+  const res = await api('POST', '/api/dev/login', { body: { name, password: PASSWORD } });
   if (res.status !== 200) throw new Error(`Connexion impossible pour ${name} : ${res.status} ${JSON.stringify(res.json)}`);
   return { cookie: res.cookie, id: res.json.id };
 }

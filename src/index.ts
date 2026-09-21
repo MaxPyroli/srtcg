@@ -10,6 +10,8 @@ import {
   getCatalog,
   getUser,
   devLogin,
+  resetPassword,
+  deleteUser,
   listUsers,
   openBooster,
   listCollection,
@@ -116,9 +118,9 @@ const requireAdmin = async (c: Context<AppEnv>, next: () => Promise<void>) => {
 
 /**
  * Connexion de test, sans Twitch. Désactivée par défaut : elle n'existe que si DEV_AUTH vaut "1".
- * Chaque pseudo a son propre mot de passe (choisi à la première connexion) : DEV_PASSWORD, s'il
- * est configuré, ne protège que la création d'un nouveau compte (et la récupération d'un compte
- * créé avant cette fonctionnalité), pas les connexions suivantes.
+ * Chaque pseudo a son propre mot de passe, choisi librement à la première connexion (premier
+ * arrivé, premier servi, comme un pseudo Discord). Un joueur qui l'oublie doit demander à un admin
+ * de le réinitialiser (POST /api/admin/users/:id/reset-password).
  * À remplacer par la connexion Twitch avant d'ouvrir le jeu à la communauté.
  */
 app.post('/api/dev/login', async (c) => {
@@ -133,8 +135,6 @@ app.post('/api/dev/login', async (c) => {
     name,
     isAdmin: admins.includes(name.toLowerCase()),
     password: typeof body.password === 'string' ? body.password : undefined,
-    sitePassword: typeof body.sitePassword === 'string' ? body.sitePassword : undefined,
-    requiredSitePassword: c.env.DEV_PASSWORD,
   });
   await startSession(c, user);
   return c.json(publicUser(user));
@@ -258,6 +258,18 @@ app.post('/api/admin/grant', async (c) => {
   if (amount > MAX_GRANT) throw new GameError('bad_request', 400, `Maximum ${MAX_GRANT} boosters à la fois.`);
   const boosters = await grantBoosters(c.env.DB, c.get('user').id, positiveInt(body.userId, 'userId'), amount);
   return c.json({ userId: body.userId, boosters });
+});
+
+app.post('/api/admin/users/:id/reset-password', async (c) => {
+  const id = idParam(c.req.param('id'), 'id');
+  await resetPassword(c.env.DB, c.get('user').id, id);
+  return c.json({ ok: true });
+});
+
+app.delete('/api/admin/users/:id', async (c) => {
+  const id = idParam(c.req.param('id'), 'id');
+  await deleteUser(c.env.DB, c.get('user').id, id);
+  return c.json({ ok: true });
 });
 
 app.post('/api/admin/codes', async (c) => {

@@ -54,6 +54,12 @@ artistique qui viendra après le fonctionnement. Les 101 cartes actuelles sont d
 - Sessions : cookie signé (HMAC) contenant l'identifiant du joueur. La connexion Twitch devra produire le même cookie.
 - `DEV_AUTH` (connexion de test sans Twitch) doit rester à `"0"` en production. Ne jamais commiter de secret
   (`.dev.vars` est ignoré par Git).
+- (22/09/2026) Connexion de test : chaque pseudo a son propre mot de passe, choisi librement à la première
+  connexion (premier arrivé, premier servi, comme un pseudo Discord). Il n'y a plus de mot de passe de site
+  partagé (abandonné : ça compliquait la compréhension pour rien, et forçait de fait tout le monde à avoir
+  le même mot de passe). Un joueur qui oublie le sien doit demander à un admin de le réinitialiser (onglet
+  Administration → Gestion des comptes). L'admin peut aussi supprimer un compte (irréversible : collection,
+  échanges et codes créés disparaissent avec).
 - Twitch (vérifié le 21/09/2026 sur dev.twitch.tv ; l'API évolue, revalider avant de coder) :
   - **Abonnement (sub)** : scope `channel:read:subscriptions`, autorisé **une seule fois par le streamer**
     (pas par chaque joueur). Vérifier un joueur précis : `GET /subscriptions` avec son `user_id`.

@@ -107,18 +107,16 @@ export async function getUser(db: D1Database, id: number): Promise<UserRow | nul
 const DEV_PASSWORD_MIN_LENGTH = 4;
 
 /**
- * Connexion de test : chaque pseudo a son propre mot de passe, choisi à la première connexion.
- * Le mot de passe du site (DEV_PASSWORD) est une notion séparée : il ne fait que protéger la
- * création d'un compte (ou la récupération d'un compte créé avant cette fonctionnalité), il ne
- * devient jamais le mot de passe du joueur.
- * - Nouveau pseudo : il devient le compte, avec le mot de passe personnel fourni.
- * - Pseudo déjà utilisé mais sans mot de passe personnel (compte créé avant cette fonctionnalité) :
- *   le mot de passe du site sert une dernière fois à le récupérer, puis il fixe son mot de passe personnel.
+ * Connexion de test : chaque pseudo a son propre mot de passe, choisi à la première connexion
+ * (premier arrivé, premier servi sur le pseudo, comme un pseudo Discord). Si un joueur oublie le
+ * sien, un admin peut le réinitialiser (resetPassword ci-dessous).
+ * - Nouveau pseudo, ou pseudo déjà utilisé mais sans mot de passe personnel (compte créé avant
+ *   cette fonctionnalité, ou réinitialisé par un admin) : le mot de passe fourni devient le sien.
  * - Pseudo avec mot de passe personnel : il doit correspondre.
  */
 export async function devLogin(
   db: D1Database,
-  input: { name: string; isAdmin: boolean; password: string | undefined; sitePassword: string | undefined; requiredSitePassword: string | undefined },
+  input: { name: string; isAdmin: boolean; password: string | undefined },
 ): Promise<UserRow> {
   const twitchId = `dev:${input.name.toLowerCase()}`;
   const existing = await db
@@ -127,9 +125,6 @@ export async function devLogin(
     .first<UserRow & { password_hash: string | null; password_salt: string | null }>();
 
   if (!existing || !existing.password_hash || !existing.password_salt) {
-    if (input.requiredSitePassword && input.sitePassword !== input.requiredSitePassword) {
-      throw new GameError('bad_site_password', 401, "Mot de passe d'accès au site incorrect.");
-    }
     if (!input.password || input.password.length < DEV_PASSWORD_MIN_LENGTH) {
       throw new GameError('weak_password', 400, `Choisis un mot de passe d'au moins ${DEV_PASSWORD_MIN_LENGTH} caractères.`);
     }
@@ -160,6 +155,45 @@ export async function devLogin(
     .first<UserRow>();
   if (!user) throw new Error('Connexion impossible');
   return user;
+}
+
+/** Admin : efface le mot de passe d'un joueur. Il en choisit un nouveau à sa prochaine connexion. */
+export async function resetPassword(db: D1Database, adminId: number, targetUserId: number): Promise<void> {
+  const target = await getUser(db, targetUserId);
+  if (!target) throw new GameError('user_not_found', 404, 'Joueur introuvable.');
+  await db.batch([
+    db.prepare('UPDATE users SET password_hash = NULL, password_salt = NULL WHERE id = ?1').bind(targetUserId),
+    db.prepare("INSERT INTO admin_log (admin_id, action, target_user) VALUES (?1, 'reset_password', ?2)").bind(adminId, targetUserId),
+  ]);
+}
+
+/**
+ * Admin : supprime un compte et tout ce qui s'y rattache (collection, boosters ouverts, échanges,
+ * codes qu'il a créés). Irréversible. L'action est journalisée après coup (le compte n'existe plus,
+ * donc sans target_user).
+ */
+export async function deleteUser(db: D1Database, adminId: number, targetUserId: number): Promise<void> {
+  if (adminId === targetUserId) throw new GameError('cannot_delete_self', 400, 'Tu ne peux pas supprimer ton propre compte.');
+  const target = await getUser(db, targetUserId);
+  if (!target) throw new GameError('user_not_found', 404, 'Joueur introuvable.');
+
+  await db.batch([
+    db.prepare('UPDATE admin_log SET target_user = NULL WHERE target_user = ?1').bind(targetUserId),
+    db.prepare('DELETE FROM admin_log WHERE admin_id = ?1').bind(targetUserId),
+    db.prepare('DELETE FROM booster_code_redemptions WHERE code_id IN (SELECT id FROM booster_codes WHERE created_by = ?1)').bind(targetUserId),
+    db.prepare('DELETE FROM booster_codes WHERE created_by = ?1').bind(targetUserId),
+    db.prepare('DELETE FROM booster_code_redemptions WHERE user_id = ?1').bind(targetUserId),
+    db
+      .prepare('DELETE FROM trade_resolutions WHERE actor_id = ?1 OR trade_id IN (SELECT id FROM trades WHERE from_user = ?1 OR to_user = ?1)')
+      .bind(targetUserId),
+    db.prepare('DELETE FROM trades WHERE from_user = ?1 OR to_user = ?1').bind(targetUserId),
+    db.prepare('DELETE FROM collection WHERE user_id = ?1').bind(targetUserId),
+    db.prepare('DELETE FROM openings WHERE user_id = ?1').bind(targetUserId),
+    db.prepare('DELETE FROM users WHERE id = ?1').bind(targetUserId),
+    db
+      .prepare("INSERT INTO admin_log (admin_id, action, details) VALUES (?1, 'delete_user', ?2)")
+      .bind(adminId, JSON.stringify({ displayName: target.display_name })),
+  ]);
 }
 
 export async function listUsers(db: D1Database) {

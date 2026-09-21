@@ -65,14 +65,9 @@ describe('connexion', () => {
     expect(res.status).toBe(404);
   });
 
-  it('le mot de passe du site protège la création d\'un nouveau compte, mais reste distinct du mot de passe choisi', async () => {
-    env.DEV_PASSWORD = 'sesame';
-    // Sans le mot de passe du site : refusé, quel que soit le mot de passe personnel choisi.
-    expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'toto1234' } })).status).toBe(401);
-    // Avec le mot de passe du site, on choisit son propre mot de passe (différent) pour le compte.
-    const res = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'toto1234', sitePassword: 'sesame' } });
+  it('un nouveau pseudo choisit librement son mot de passe, sans rien d\'autre à fournir', async () => {
+    const res = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'toto1234' } });
     expect(res.status).toBe(200);
-    // Les connexions suivantes n'ont besoin que du mot de passe personnel, pas de celui du site.
     expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'toto1234' } })).status).toBe(200);
   });
 
@@ -91,17 +86,33 @@ describe('connexion', () => {
     expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepassealice' } })).status).toBe(200);
   });
 
-  it('un compte créé avant cette fonctionnalité (sans mot de passe personnel) se récupère avec le mot de passe du site', async () => {
-    env.DEV_PASSWORD = 'sesame';
+  it('un compte créé avant cette fonctionnalité (sans mot de passe personnel) se réclame comme un nouveau pseudo', async () => {
     db.exec("INSERT INTO users (twitch_id, display_name) VALUES ('dev:ancien', 'ancien')");
-    const wrong = await call('POST', '/api/dev/login', { body: { name: 'ancien', password: 'monproprepass' } });
-    expect(wrong.status).toBe(401);
-    const claimed = await call('POST', '/api/dev/login', { body: { name: 'ancien', password: 'monproprepass', sitePassword: 'sesame' } });
+    const claimed = await call('POST', '/api/dev/login', { body: { name: 'ancien', password: 'monproprepass' } });
     expect(claimed.status).toBe(200);
-    // Une fois récupéré, seul le mot de passe personnel compte, plus celui du site.
+    // Une fois réclamé, le mot de passe personnel fait foi.
+    expect((await call('POST', '/api/dev/login', { body: { name: 'ancien', password: 'autrechose' } })).status).toBe(401);
     const second = await call('POST', '/api/dev/login', { body: { name: 'ancien', password: 'monproprepass' } });
     expect(second.status).toBe(200);
     expect(second.json.id).toBe(claimed.json.id);
+  });
+
+  it('un admin réinitialise le mot de passe d\'un joueur, qui peut alors s\'en choisir un nouveau', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice', 'ancienmdp');
+    expect((await call('POST', `/api/admin/users/${alice.id}/reset-password`, { cookie: chef.cookie })).status).toBe(200);
+    // Le mot de passe a bien été effacé : un mot de passe différent de l'ancien est accepté et devient le nouveau.
+    const res = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'nouveaumdp' } });
+    expect(res.status).toBe(200);
+    expect(res.json.id).toBe(alice.id);
+    // Il fait foi désormais : l'ancien ne fonctionne plus.
+    expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'ancienmdp' } })).status).toBe(401);
+  });
+
+  it('réserve la réinitialisation de mot de passe aux admins', async () => {
+    const alice = await login('alice');
+    const bob = await login('bob');
+    expect((await call('POST', `/api/admin/users/${bob.id}/reset-password`, { cookie: alice.cookie })).status).toBe(403);
   });
 
   it('connecte un joueur et retrouve son profil', async () => {
@@ -149,6 +160,49 @@ describe('administration', () => {
     expect((await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: chef.id, amount: 0 } })).status).toBe(400);
     expect((await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: chef.id, amount: 101 } })).status).toBe(400);
     expect((await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: 9999, amount: 1 } })).status).toBe(404);
+  });
+});
+
+describe('suppression de compte', () => {
+  it('un admin supprime un joueur et tout ce qui s\'y rattache', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    const bob = await login('bob');
+    give(alice.id, COMMUNE_A);
+    give(bob.id, COMMUNE_B);
+    await call('POST', '/api/trades', { cookie: alice.cookie, body: { toUserId: bob.id, offeredCardId: COMMUNE_A, requestedCardId: COMMUNE_B } });
+    await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: alice.id, amount: 1 } });
+    await call('POST', '/api/boosters/open', { cookie: alice.cookie });
+
+    const res = await call('DELETE', `/api/admin/users/${alice.id}`, { cookie: chef.cookie });
+    expect(res.status).toBe(200);
+
+    expect(Number(db.one('SELECT COUNT(*) AS n FROM users WHERE id = ?', alice.id)?.n)).toBe(0);
+    expect(Number(db.one('SELECT COUNT(*) AS n FROM collection WHERE user_id = ?', alice.id)?.n)).toBe(0);
+    expect(Number(db.one('SELECT COUNT(*) AS n FROM openings WHERE user_id = ?', alice.id)?.n)).toBe(0);
+    expect(Number(db.one('SELECT COUNT(*) AS n FROM trades WHERE from_user = ? OR to_user = ?', alice.id, alice.id)?.n)).toBe(0);
+    // Bob n'est pas affecté par la suppression d'alice, sa carte n'a pas été touchée.
+    expect(qty(bob.id, COMMUNE_B)).toEqual({ quantity: 1, reserved: 0 });
+    // Le pseudo redevient disponible.
+    expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'nouveaupass' } })).status).toBe(200);
+  });
+
+  it('un admin ne peut pas supprimer son propre compte', async () => {
+    const chef = await login('chef');
+    const res = await call('DELETE', `/api/admin/users/${chef.id}`, { cookie: chef.cookie });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('cannot_delete_self');
+  });
+
+  it('réserve la suppression de compte aux admins', async () => {
+    const alice = await login('alice');
+    const bob = await login('bob');
+    expect((await call('DELETE', `/api/admin/users/${bob.id}`, { cookie: alice.cookie })).status).toBe(403);
+  });
+
+  it('refuse de supprimer un joueur inexistant', async () => {
+    const chef = await login('chef');
+    expect((await call('DELETE', '/api/admin/users/9999', { cookie: chef.cookie })).status).toBe(404);
   });
 });
 
