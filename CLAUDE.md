@@ -20,9 +20,11 @@ artistique qui viendra après le fonctionnement. Les 101 cartes actuelles sont d
 ## Décisions prises
 
 - Booster de 5 cartes : cartes 1 à 3 toujours communes ; carte 4 commune avec 1 chance sur 5 d'être peu commune
-  et 1 sur 15 d'être rare ; carte 5 au moins peu commune, avec 1 chance sur 5 d'être rare et 1 sur 20 d'être légendaire.
-- Carte secrète : 1 chance sur 100 par booster, à la place de la carte 5, **non échangeable**.
-- God Pack : 1 chance sur 200 ; 1 peu commune, 3 rares, 1 légendaire.
+  et 1 sur 15 d'être rare ; carte 5 au moins peu commune, avec 1 chance sur 5 d'être rare et 1 sur 100 d'être légendaire.
+- Carte secrète : 1 chance sur 1000 par booster, à la place de la carte 5, **non échangeable**.
+- God Pack : 1 chance sur 2000 ; 1 peu commune, 3 rares, 1 légendaire.
+- (21/09/2026) Légendaire et carte secrète jugées trop fréquentes en test ("on a tous légendaire et tout") :
+  légendaire de carte 5 passée de 1/20 à 1/100, carte secrète de 1/100 à 1/1000, God Pack de 1/200 à 1/2000.
 - Aucun système de « pitié » : aléatoire pur. Probabilités à essayer puis ajuster (tout est dans `src/config.ts`).
 - Première série : environ 100 cartes (50 communes, 35 peu communes, 10 rares, 5 légendaires) + 1 secrète.
 - Boosters rares, liés à la vie de la chaîne (lives, événements, codes distribués par le compte admin), pas de gain
