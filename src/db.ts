@@ -31,6 +31,10 @@ const DB_TOKENS: Record<string, { code: string; status: number; message: string 
   E_TRADE_NOT_FOUND: { code: 'trade_not_found', status: 404, message: 'Demande introuvable.' },
   E_TRADE_CLOSED: { code: 'trade_closed', status: 409, message: 'Cette demande est déjà conclue.' },
   E_FORBIDDEN: { code: 'forbidden', status: 403, message: "Tu n'as pas le droit de faire ça." },
+  E_CODE_NOT_FOUND: { code: 'code_not_found', status: 404, message: 'Code introuvable.' },
+  E_CODE_EXPIRED: { code: 'code_expired', status: 410, message: 'Ce code a expiré.' },
+  E_CODE_EXHAUSTED: { code: 'code_exhausted', status: 409, message: "Ce code a atteint son nombre maximal d'utilisations." },
+  E_CODE_ALREADY_USED: { code: 'code_already_used', status: 409, message: 'Tu as déjà utilisé ce code.' },
 };
 
 /** Transforme une erreur de la base en GameError quand elle vient d'un garde-fou. */
@@ -325,4 +329,196 @@ export async function resolveTrade(db: D1Database, tradeId: number, actorId: num
   } catch (error) {
     throw translateDbError(error);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Codes de boosters
+// ---------------------------------------------------------------------------
+
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans caractères ambigus (I, O, 0, 1)
+const CODE_LENGTH = 8;
+
+function generateCode(): string {
+  const bytes = new Uint8Array(CODE_LENGTH);
+  crypto.getRandomValues(bytes);
+  let out = '';
+  for (const b of bytes) out += CODE_ALPHABET[b % CODE_ALPHABET.length];
+  return out;
+}
+
+export interface BoosterCodeRow {
+  id: number;
+  code: string;
+  boosters: number;
+  maxUses: number;
+  uses: number;
+  expiresAt: string | null;
+  createdByName: string;
+  createdAt: string;
+}
+
+/** Crée un code de boosters (compte admin). L'action est journalisée. */
+export async function createBoosterCode(
+  db: D1Database,
+  adminId: number,
+  input: { boosters: number; maxUses: number; expiresInHours: number | null },
+): Promise<BoosterCodeRow> {
+  const code = generateCode();
+  const results = await db.batch([
+    db
+      .prepare(
+        `INSERT INTO booster_codes (code, boosters, max_uses, expires_at, created_by)
+         VALUES (?1, ?2, ?3, CASE WHEN ?4 IS NULL THEN NULL ELSE datetime('now', '+' || ?4 || ' hours') END, ?5)
+         RETURNING id, code, boosters, max_uses AS maxUses, uses, expires_at AS expiresAt, created_at AS createdAt`,
+      )
+      .bind(code, input.boosters, input.maxUses, input.expiresInHours, adminId),
+    db
+      .prepare("INSERT INTO admin_log (admin_id, action, details) VALUES (?1, 'create_code', ?2)")
+      .bind(adminId, JSON.stringify({ code, boosters: input.boosters, maxUses: input.maxUses, expiresInHours: input.expiresInHours })),
+  ]);
+  const row = results[0].results[0] as Omit<BoosterCodeRow, 'createdByName'>;
+  return { ...row, createdByName: '' };
+}
+
+export async function listBoosterCodes(db: D1Database): Promise<BoosterCodeRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT c.id, c.code, c.boosters, c.max_uses AS maxUses, c.uses,
+              c.expires_at AS expiresAt, u.display_name AS createdByName, c.created_at AS createdAt
+       FROM booster_codes c JOIN users u ON u.id = c.created_by
+       ORDER BY c.id DESC LIMIT 100`,
+    )
+    .all<BoosterCodeRow>();
+  return results;
+}
+
+/** Réclame un code : crédite les boosters. Chaque joueur ne peut réclamer un code qu'une fois. */
+export async function redeemBoosterCode(db: D1Database, userId: number, codeText: string): Promise<{ boosters: number; boostersLeft: number }> {
+  const normalized = codeText.trim().toUpperCase();
+  const codeRow = await db.prepare('SELECT id, boosters FROM booster_codes WHERE code = ?1').bind(normalized).first<{ id: number; boosters: number }>();
+  if (!codeRow) throw new GameError('code_not_found', 404, 'Code introuvable.');
+
+  try {
+    await db.batch([
+      db.prepare('INSERT INTO booster_code_redemptions (code_id, user_id) VALUES (?1, ?2)').bind(codeRow.id, userId),
+      db.prepare('UPDATE booster_codes SET uses = uses + 1 WHERE id = ?1').bind(codeRow.id),
+      db.prepare('UPDATE users SET boosters = boosters + ?2 WHERE id = ?1').bind(userId, codeRow.boosters),
+    ]);
+  } catch (error) {
+    throw translateDbError(error);
+  }
+
+  const row = await db.prepare('SELECT boosters FROM users WHERE id = ?1').bind(userId).first<{ boosters: number }>();
+  return { boosters: codeRow.boosters, boostersLeft: row?.boosters ?? 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Vue d'ensemble admin
+// ---------------------------------------------------------------------------
+
+export interface AdminStats {
+  totalUsers: number;
+  totalBoostersHeld: number;
+  totalOpenings: number;
+  tradesPending: number;
+  tradesResolved: number;
+  activeCodes: number;
+}
+
+export async function getAdminStats(db: D1Database): Promise<AdminStats> {
+  const row = await db
+    .prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM users) AS totalUsers,
+         (SELECT COALESCE(SUM(boosters), 0) FROM users) AS totalBoostersHeld,
+         (SELECT COUNT(*) FROM openings) AS totalOpenings,
+         (SELECT COUNT(*) FROM trades WHERE status = 'pending') AS tradesPending,
+         (SELECT COUNT(*) FROM trades WHERE status <> 'pending') AS tradesResolved,
+         (SELECT COUNT(*) FROM booster_codes WHERE uses < max_uses AND (expires_at IS NULL OR expires_at > datetime('now'))) AS activeCodes`,
+    )
+    .first<AdminStats>();
+  return row as AdminStats;
+}
+
+export interface AdminLogEntry {
+  id: number;
+  createdAt: string;
+  adminName: string;
+  action: string;
+  targetName: string | null;
+  details: string | null;
+}
+
+export async function listAdminLog(db: D1Database, limit = 50): Promise<AdminLogEntry[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT l.id, l.created_at AS createdAt, a.display_name AS adminName, l.action,
+              t.display_name AS targetName, l.details
+       FROM admin_log l
+       JOIN users a ON a.id = l.admin_id
+       LEFT JOIN users t ON t.id = l.target_user
+       ORDER BY l.id DESC LIMIT ?1`,
+    )
+    .bind(limit)
+    .all<AdminLogEntry>();
+  return results;
+}
+
+/** Comme listTrades, mais tous joueurs confondus (vue admin). */
+export async function listAllTrades(db: D1Database, limit = 30): Promise<TradeEntry[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT t.id, t.status, t.created_at AS createdAt,
+              t.from_user AS fromUserId, fu.display_name AS fromName,
+              t.to_user AS toUserId, tu.display_name AS toName,
+              t.offered_card AS offeredCardId, oc.name AS offeredName, oc.rarity AS offeredRarity,
+              t.requested_card AS requestedCardId, rc.name AS requestedName
+       FROM trades t
+       JOIN users fu ON fu.id = t.from_user
+       JOIN users tu ON tu.id = t.to_user
+       JOIN cards oc ON oc.id = t.offered_card
+       JOIN cards rc ON rc.id = t.requested_card
+       ORDER BY t.id DESC LIMIT ?1`,
+    )
+    .bind(limit)
+    .all<TradeEntry>();
+  return results;
+}
+
+export interface NotableOpening {
+  id: number;
+  createdAt: string;
+  userName: string;
+  kind: BoosterKind;
+  cards: { name: string; rarity: Rarity }[];
+}
+
+/** Ouvertures récentes contenant au moins une carte rare et plus (utile pour suivre les beaux tirages). */
+export async function listNotableOpenings(db: D1Database, limit = 30): Promise<NotableOpening[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT o.id, o.opened_at AS createdAt, o.kind, o.card_ids AS cardIds, u.display_name AS userName
+       FROM openings o JOIN users u ON u.id = o.user_id
+       ORDER BY o.id DESC LIMIT 300`,
+    )
+    .all<{ id: number; createdAt: string; kind: BoosterKind; cardIds: string; userName: string }>();
+
+  const { byId } = await getCatalog(db);
+  const notable: NotableOpening[] = [];
+  for (const row of results) {
+    const cardIds: number[] = JSON.parse(row.cardIds);
+    const rareCards = cardIds
+      .map((id) => byId.get(id))
+      .filter((c): c is CardRow => !!c && (c.rarity === 'rare' || c.rarity === 'legendaire' || c.rarity === 'secrete'));
+    if (rareCards.length === 0) continue;
+    notable.push({
+      id: row.id,
+      createdAt: row.createdAt,
+      userName: row.userName,
+      kind: row.kind,
+      cards: rareCards.map((c) => ({ name: c.name, rarity: c.rarity })),
+    });
+    if (notable.length >= limit) break;
+  }
+  return notable;
 }

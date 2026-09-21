@@ -155,7 +155,7 @@
   </section>
 
   <section id="game" hidden>
-    <nav class="tabs" aria-label="Sections">
+    <nav id="mainTabs" class="tabs" aria-label="Sections">
       <button type="button" data-tab="booster" aria-selected="true">Boosters</button>
       <button type="button" data-tab="collection" aria-selected="false">Ma collection</button>
       <button type="button" data-tab="trades" aria-selected="false">Échanges</button>
@@ -173,6 +173,14 @@
       <div id="stack" class="stack" hidden aria-live="polite"></div>
       <div id="revealedRow" class="cards" hidden></div>
       <p id="announce" class="annonce" role="status"></p>
+
+      <h2 style="margin-top:28px">Tu as un code ?</h2>
+      <form id="codeForm">
+        <label>Code
+          <input id="codeInput" maxlength="16" autocomplete="off" placeholder="Ex. AB12CD34">
+        </label>
+        <button class="secondary" type="submit">Utiliser le code</button>
+      </form>
     </div>
 
     <div id="tab-collection" class="panel" hidden>
@@ -200,14 +208,59 @@
     </div>
 
     <div id="tab-admin" class="panel" hidden>
-      <h2>Offrir des boosters</h2>
-      <label>Joueur
-        <select id="grantUser"></select>
-      </label>
-      <label>Nombre de boosters (1 à 100)
-        <input id="grantAmount" type="number" min="1" max="100" value="5">
-      </label>
-      <button id="grantBtn" class="primary" type="button">Offrir</button>
+      <div id="adminStats" class="who"></div>
+
+      <nav id="adminSubtabs" class="tabs" aria-label="Administration">
+        <button type="button" data-subtab="players" aria-selected="true">Joueurs</button>
+        <button type="button" data-subtab="codes" aria-selected="false">Codes</button>
+        <button type="button" data-subtab="log" aria-selected="false">Journal</button>
+        <button type="button" data-subtab="trades" aria-selected="false">Échanges</button>
+        <button type="button" data-subtab="openings" aria-selected="false">Tirages notables</button>
+      </nav>
+
+      <div id="admin-players">
+        <h2>Offrir des boosters</h2>
+        <label>Joueur
+          <select id="grantUser"></select>
+        </label>
+        <label>Nombre de boosters (1 à 100)
+          <input id="grantAmount" type="number" min="1" max="100" value="5">
+        </label>
+        <button id="grantBtn" class="primary" type="button">Offrir</button>
+      </div>
+
+      <div id="admin-codes" hidden>
+        <h2>Créer un code de boosters</h2>
+        <label>Boosters par utilisation (1 à 100)
+          <input id="codeBoosters" type="number" min="1" max="100" value="1">
+        </label>
+        <label>Nombre d'utilisations maximum
+          <input id="codeMaxUses" type="number" min="1" value="20">
+        </label>
+        <label>Durée de validité en heures (laisser vide = pas d'expiration)
+          <input id="codeExpires" type="number" min="1">
+        </label>
+        <button id="codeCreateBtn" class="primary" type="button">Créer le code</button>
+        <p id="codeCreateResult" class="muted"></p>
+
+        <h2 style="margin-top:28px">Codes existants</h2>
+        <ul id="codeList" class="liste"></ul>
+      </div>
+
+      <div id="admin-log" hidden>
+        <h2>Journal des actions admin</h2>
+        <ul id="adminLogList" class="liste"></ul>
+      </div>
+
+      <div id="admin-trades" hidden>
+        <h2>Échanges, tous joueurs</h2>
+        <ul id="adminTradeList" class="liste"></ul>
+      </div>
+
+      <div id="admin-openings" hidden>
+        <h2>Derniers tirages notables (rare et plus)</h2>
+        <ul id="adminOpeningsList" class="liste"></ul>
+      </div>
     </div>
   </section>
 
@@ -350,19 +403,35 @@ async function refreshMe() {
 }
 
 function showTab(name) {
-  for (const button of document.querySelectorAll('nav.tabs button')) {
+  for (const button of document.querySelectorAll('#mainTabs button')) {
     button.setAttribute('aria-selected', String(button.dataset.tab === name));
   }
   for (const id of ['booster', 'collection', 'trades', 'admin']) $(`#tab-${id}`).hidden = id !== name;
   if (name === 'booster') refreshMe();
   if (name === 'collection') refreshCollection();
   if (name === 'trades') refreshTrades();
-  if (name === 'admin') refreshPlayers().then(renderGrantUsers);
+  if (name === 'admin') {
+    refreshPlayers().then(renderGrantUsers);
+    refreshBoosterCodes();
+    refreshAdminOverview();
+  }
 }
 
-document.querySelector('nav.tabs').addEventListener('click', (event) => {
+document.querySelector('#mainTabs').addEventListener('click', (event) => {
   const tab = event.target.closest('button[data-tab]');
   if (tab) showTab(tab.dataset.tab);
+});
+
+function showAdminSubtab(name) {
+  for (const button of document.querySelectorAll('#adminSubtabs button')) {
+    button.setAttribute('aria-selected', String(button.dataset.subtab === name));
+  }
+  for (const id of ['players', 'codes', 'log', 'trades', 'openings']) $(`#admin-${id}`).hidden = id !== name;
+}
+
+document.querySelector('#adminSubtabs').addEventListener('click', (event) => {
+  const tab = event.target.closest('button[data-subtab]');
+  if (tab) showAdminSubtab(tab.dataset.subtab);
 });
 
 // --- Boosters --------------------------------------------------------------
@@ -412,17 +481,43 @@ function startReveal(opened) {
   $('#revealAll').hidden = false;
   $('#revealAll').onclick = () => {
     pack.hidden = true;
-    $('#stack').hidden = true;
-    showFinalRow(opened);
+    beginStack(opened)();
   };
 }
 
-/** Étape 2 : les 5 cartes empilées, révélées une par une (la carte du dessus s'envole une fois vue). */
+/**
+ * Étape 2 : les 5 cartes empilées, révélées une par une (la carte du dessus s'envole une fois vue).
+ * Renvoie une fonction qui enchaîne automatiquement la même révélation, sans clic
+ * (utilisée par « Tout révéler »).
+ */
 function beginStack(opened) {
   const stack = $('#stack');
   stack.hidden = false;
   stack.replaceChildren();
   let revealed = 0;
+  let autoPlaying = false;
+
+  const reveal = (button, card) => {
+    if (button.classList.contains('open')) return;
+    button.classList.add('open');
+    button.setAttribute('aria-label', `${card.name}, ${RARITIES[card.rarity]}`);
+    if (FLASHY[card.rarity]) button.classList.add('flash');
+    setTimeout(() => {
+      button.classList.add('flyout');
+      $('#revealedRow').hidden = false;
+      $('#revealedRow').append(cardView(card));
+      setTimeout(() => {
+        button.remove();
+        revealed++;
+        if (revealed === buttons.length) {
+          stack.hidden = true;
+          showFinalRow(opened, true);
+        } else if (autoPlaying) {
+          reveal(buttons[revealed], opened.cards[revealed]);
+        }
+      }, revealDelay(420));
+    }, revealDelay(700));
+  };
 
   const buttons = opened.cards.map((card) => {
     const button = h('button', {
@@ -430,23 +525,8 @@ function beginStack(opened) {
       class: 'flip',
       'aria-label': 'Révéler la carte',
       onclick: () => {
-        if (button !== buttons[revealed] || button.classList.contains('open')) return;
-        button.classList.add('open');
-        button.setAttribute('aria-label', `${card.name}, ${RARITIES[card.rarity]}`);
-        if (FLASHY[card.rarity]) button.classList.add('flash');
-        setTimeout(() => {
-          button.classList.add('flyout');
-          $('#revealedRow').hidden = false;
-          $('#revealedRow').append(cardView(card));
-          setTimeout(() => {
-            button.remove();
-            revealed++;
-            if (revealed === buttons.length) {
-              stack.hidden = true;
-              showFinalRow(opened, true);
-            }
-          }, revealDelay(420));
-        }, revealDelay(700));
+        if (autoPlaying || button !== buttons[revealed]) return;
+        reveal(button, card);
       },
     },
       h('div', { class: 'flip-inner' },
@@ -456,10 +536,13 @@ function beginStack(opened) {
   });
 
   stack.append(...buttons);
-  $('#revealAll').onclick = () => {
-    stack.hidden = true;
-    showFinalRow(opened);
+  const revealAllRemaining = () => {
+    autoPlaying = true;
+    $('#revealAll').hidden = true;
+    if (revealed < buttons.length) reveal(buttons[revealed], opened.cards[revealed]);
   };
+  $('#revealAll').onclick = revealAllRemaining;
+  return revealAllRemaining;
 }
 
 /** Étape 3 : les 5 cartes révélées, en ligne (atteint aussi via « Tout révéler »). */
@@ -472,6 +555,17 @@ function showFinalRow(opened, alreadyBuilt = false) {
   if (opened.kind === 'god') $('#announce').textContent = 'God Pack !';
   if (opened.kind === 'secret') $('#announce').textContent = 'Carte secrète !';
 }
+
+$('#codeForm').addEventListener('submit', (event) => {
+  event.preventDefault();
+  guarded($('#codeForm button'), async () => {
+    const result = await api('POST', '/api/codes/redeem', { code: $('#codeInput').value.trim() });
+    $('#codeInput').value = '';
+    state.me.boosters = result.boostersLeft;
+    renderWho();
+    say(`Code utilisé : +${result.boosters} booster${result.boosters > 1 ? 's' : ''}.`);
+  });
+});
 
 // --- Collection ------------------------------------------------------------
 
@@ -593,6 +687,99 @@ $('#grantBtn').addEventListener('click', (event) => guarded(event.currentTarget,
   if (userId === state.me.id) { state.me.boosters = result.boosters; renderWho(); }
   say(`${amount} booster${amount > 1 ? 's' : ''} offert${amount > 1 ? 's' : ''}.`);
 }));
+
+/** Formate une date SQLite ('YYYY-MM-DD HH:MM:SS', UTC) en heure locale. */
+function fmtDate(s) {
+  if (!s) return '';
+  const d = new Date(s.replace(' ', 'T') + 'Z');
+  return isNaN(d) ? s : d.toLocaleString();
+}
+
+// --- Codes de boosters (administration) -------------------------------------
+
+async function refreshBoosterCodes() {
+  renderCodeList(await api('GET', '/api/admin/codes'));
+}
+
+function renderCodeList(codes) {
+  $('#codeList').replaceChildren(...(codes.length ? codes.map((c) => {
+    const expired = c.expiresAt && new Date(c.expiresAt.replace(' ', 'T') + 'Z') <= new Date();
+    const exhausted = c.uses >= c.maxUses;
+    const status = exhausted ? 'Épuisé' : expired ? 'Expiré' : 'Actif';
+    return h('li', {},
+      h('span', {},
+        h('strong', {}, c.code),
+        ` — ${c.boosters} booster${c.boosters > 1 ? 's' : ''}, ${c.uses}/${c.maxUses} utilisé${c.uses > 1 ? 's' : ''}`,
+        c.expiresAt ? `, expire le ${fmtDate(c.expiresAt)}` : ', sans expiration',
+        ` — créé par ${c.createdByName} le ${fmtDate(c.createdAt)}`),
+      h('span', { class: 'pastille' }, status));
+  }) : [h('p', { class: 'muted' }, 'Aucun code créé pour le moment.')]));
+}
+
+$('#codeCreateBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
+  const boosters = Number($('#codeBoosters').value);
+  const maxUses = Number($('#codeMaxUses').value);
+  const expiresRaw = $('#codeExpires').value.trim();
+  const body = { boosters, maxUses, ...(expiresRaw ? { expiresInHours: Number(expiresRaw) } : {}) };
+  const created = await api('POST', '/api/admin/codes', body);
+  $('#codeCreateResult').textContent = `Code créé : ${created.code}`;
+  $('#codeExpires').value = '';
+  await refreshBoosterCodes();
+}));
+
+// --- Vue d'ensemble (administration) -----------------------------------------
+
+async function refreshAdminOverview() {
+  const overview = await api('GET', '/api/admin/overview');
+  renderAdminStats(overview.stats);
+  renderAdminLog(overview.adminLog);
+  renderAdminTrades(overview.trades);
+  renderAdminOpenings(overview.notableOpenings);
+}
+
+function renderAdminStats(stats) {
+  $('#adminStats').replaceChildren(
+    h('span', {}, 'Joueurs : ', h('strong', {}, stats.totalUsers)),
+    h('span', {}, 'Boosters en circulation : ', h('strong', {}, stats.totalBoostersHeld)),
+    h('span', {}, 'Boosters ouverts : ', h('strong', {}, stats.totalOpenings)),
+    h('span', {}, 'Échanges en attente : ', h('strong', {}, stats.tradesPending)),
+    h('span', {}, 'Échanges conclus : ', h('strong', {}, stats.tradesResolved)),
+    h('span', {}, 'Codes actifs : ', h('strong', {}, stats.activeCodes)),
+  );
+}
+
+const ADMIN_ACTIONS = { grant_boosters: 'Boosters offerts', create_code: 'Code créé' };
+
+function renderAdminLog(entries) {
+  $('#adminLogList').replaceChildren(...(entries.length ? entries.map((l) => {
+    let detail = '';
+    try {
+      const d = JSON.parse(l.details || '{}');
+      if (l.action === 'grant_boosters') detail = `${d.amount} booster${d.amount > 1 ? 's' : ''}`;
+      if (l.action === 'create_code') detail = `${d.code} (${d.boosters} booster${d.boosters > 1 ? 's' : ''} × ${d.maxUses})`;
+    } catch { /* détails illisibles : on affiche juste l'action */ }
+    return h('li', {}, h('span', {},
+      `${fmtDate(l.createdAt)} — ${l.adminName} : ${ADMIN_ACTIONS[l.action] || l.action}`,
+      l.targetName ? ` → ${l.targetName}` : '', detail ? ` (${detail})` : ''));
+  }) : [h('p', { class: 'muted' }, 'Aucune action pour le moment.')]));
+}
+
+function renderAdminTrades(trades) {
+  $('#adminTradeList').replaceChildren(...(trades.length ? trades.map((t) => h('li', {},
+    h('span', {}, `${fmtDate(t.createdAt)} — ${t.fromName} propose ${t.offeredName} contre ${t.requestedName} de ${t.toName}`),
+    h('span', { class: 'pastille' }, STATUS[t.status]),
+  )) : [h('p', { class: 'muted' }, 'Aucun échange pour le moment.')]));
+}
+
+function renderAdminOpenings(openings) {
+  $('#adminOpeningsList').replaceChildren(...(openings.length ? openings.map((o) => {
+    const cards = o.cards.map((c) => `${c.name} (${RARITIES[c.rarity]})`).join(', ');
+    const badge = o.kind === 'god' ? 'God Pack' : o.kind === 'secret' ? 'Carte secrète' : '';
+    return h('li', {},
+      h('span', {}, `${fmtDate(o.createdAt)} — ${o.userName} : ${cards}`),
+      badge ? h('span', { class: 'pastille' }, badge) : '');
+  }) : [h('p', { class: 'muted' }, 'Aucun tirage notable pour le moment.')]));
+}
 
 // --- Démarrage -------------------------------------------------------------
 

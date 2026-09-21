@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import type { Env, UserRow } from './types.ts';
-import { SESSION_TTL_SECONDS, MAX_GRANT } from './config.ts';
+import { SESSION_TTL_SECONDS, MAX_GRANT, MAX_CODE_USES, MAX_CODE_HOURS } from './config.ts';
 import { cryptoRng } from './rng.ts';
 import { signSession, verifySession } from './auth.ts';
 import {
@@ -17,6 +17,13 @@ import {
   proposeTrade,
   listTrades,
   resolveTrade,
+  createBoosterCode,
+  listBoosterCodes,
+  redeemBoosterCode,
+  getAdminStats,
+  listAdminLog,
+  listAllTrades,
+  listNotableOpenings,
 } from './db.ts';
 import type { TradeOutcome } from './db.ts';
 
@@ -152,6 +159,7 @@ app.use('/api/collection', requireUser);
 app.use('/api/boosters/*', requireUser);
 app.use('/api/trades', requireUser);
 app.use('/api/trades/*', requireUser);
+app.use('/api/codes/*', requireUser);
 app.use('/api/admin/*', requireUser, requireAdmin);
 
 app.get('/api/me', (c) => c.json(publicUser(c.get('user'))));
@@ -205,6 +213,16 @@ app.post('/api/trades/:id/:action', async (c) => {
   return c.json({ ok: true, status: outcome });
 });
 
+// --- Codes de boosters ------------------------------------------------------
+
+app.post('/api/codes/redeem', async (c) => {
+  const body = await readJson(c);
+  const code = typeof body.code === 'string' ? body.code.trim() : '';
+  if (!code) throw new GameError('bad_request', 400, 'Code manquant.');
+  const result = await redeemBoosterCode(c.env.DB, c.get('user').id, code);
+  return c.json(result);
+});
+
 // --- Administration -------------------------------------------------------
 
 app.post('/api/admin/grant', async (c) => {
@@ -213,6 +231,33 @@ app.post('/api/admin/grant', async (c) => {
   if (amount > MAX_GRANT) throw new GameError('bad_request', 400, `Maximum ${MAX_GRANT} boosters à la fois.`);
   const boosters = await grantBoosters(c.env.DB, c.get('user').id, positiveInt(body.userId, 'userId'), amount);
   return c.json({ userId: body.userId, boosters });
+});
+
+app.post('/api/admin/codes', async (c) => {
+  const body = await readJson(c);
+  const boosters = positiveInt(body.boosters, 'boosters');
+  if (boosters > MAX_GRANT) throw new GameError('bad_request', 400, `Maximum ${MAX_GRANT} boosters par utilisation.`);
+  const maxUses = positiveInt(body.maxUses, 'maxUses');
+  if (maxUses > MAX_CODE_USES) throw new GameError('bad_request', 400, `Maximum ${MAX_CODE_USES} utilisations.`);
+  let expiresInHours: number | null = null;
+  if (body.expiresInHours != null) {
+    expiresInHours = positiveInt(body.expiresInHours, 'expiresInHours');
+    if (expiresInHours > MAX_CODE_HOURS) throw new GameError('bad_request', 400, `Maximum ${MAX_CODE_HOURS} heures.`);
+  }
+  const created = await createBoosterCode(c.env.DB, c.get('user').id, { boosters, maxUses, expiresInHours });
+  return c.json(created, 201);
+});
+
+app.get('/api/admin/codes', async (c) => c.json(await listBoosterCodes(c.env.DB)));
+
+app.get('/api/admin/overview', async (c) => {
+  const [stats, adminLog, trades, notableOpenings] = await Promise.all([
+    getAdminStats(c.env.DB),
+    listAdminLog(c.env.DB),
+    listAllTrades(c.env.DB),
+    listNotableOpenings(c.env.DB),
+  ]);
+  return c.json({ stats, adminLog, trades, notableOpenings });
 });
 
 // Les pages du site (dossier public/) sont servies par Cloudflare avant d'arriver ici.

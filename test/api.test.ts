@@ -119,6 +119,105 @@ describe('administration', () => {
   });
 });
 
+describe('codes de boosters', () => {
+  it('un admin crée un code, et l\'action est journalisée', async () => {
+    const chef = await login('chef');
+    const res = await call('POST', '/api/admin/codes', { cookie: chef.cookie, body: { boosters: 3, maxUses: 10 } });
+    expect(res.status).toBe(201);
+    expect(res.json.code).toMatch(/^[A-Z0-9]{8}$/);
+    expect(res.json.boosters).toBe(3);
+    expect(res.json.maxUses).toBe(10);
+    expect(res.json.expiresAt).toBeNull();
+    const log = db.one("SELECT COUNT(*) AS n FROM admin_log WHERE action = 'create_code'");
+    expect(Number(log?.n)).toBe(1);
+  });
+
+  it('un joueur ordinaire ne peut pas créer de code', async () => {
+    const alice = await login('alice');
+    const res = await call('POST', '/api/admin/codes', { cookie: alice.cookie, body: { boosters: 3, maxUses: 10 } });
+    expect(res.status).toBe(403);
+  });
+
+  it('un joueur réclame un code et reçoit les boosters', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    const created = await call('POST', '/api/admin/codes', { cookie: chef.cookie, body: { boosters: 4, maxUses: 2 } });
+    const res = await call('POST', '/api/codes/redeem', { cookie: alice.cookie, body: { code: created.json.code.toLowerCase() } });
+    expect(res.status).toBe(200);
+    expect(res.json.boostersLeft).toBe(4);
+    expect(Number(db.one('SELECT boosters AS n FROM users WHERE id = ?', alice.id)?.n)).toBe(4);
+  });
+
+  it('un même joueur ne peut pas réclamer deux fois le même code', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    const created = await call('POST', '/api/admin/codes', { cookie: chef.cookie, body: { boosters: 2, maxUses: 10 } });
+    expect((await call('POST', '/api/codes/redeem', { cookie: alice.cookie, body: { code: created.json.code } })).status).toBe(200);
+    const second = await call('POST', '/api/codes/redeem', { cookie: alice.cookie, body: { code: created.json.code } });
+    expect(second.status).toBe(409);
+    expect(second.json.error).toBe('code_already_used');
+  });
+
+  it('refuse un code au-delà de son nombre d\'utilisations, même en rafale', async () => {
+    const chef = await login('chef');
+    const created = await call('POST', '/api/admin/codes', { cookie: chef.cookie, body: { boosters: 1, maxUses: 2 } });
+    const players = await Promise.all(['pa', 'pb', 'pc', 'pd'].map((n) => login(n)));
+    const results = await Promise.all(
+      players.map((p) => call('POST', '/api/codes/redeem', { cookie: p.cookie, body: { code: created.json.code } })),
+    );
+    expect(results.filter((r) => r.status === 200)).toHaveLength(2);
+    const refused = results.filter((r) => r.status === 409);
+    expect(refused).toHaveLength(2);
+    for (const r of refused) expect(r.json.error).toBe('code_exhausted');
+  });
+
+  it('refuse un code expiré', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    const created = await call('POST', '/api/admin/codes', { cookie: chef.cookie, body: { boosters: 1, maxUses: 5, expiresInHours: 1 } });
+    db.exec(`UPDATE booster_codes SET expires_at = datetime('now', '-1 hour') WHERE code = '${created.json.code}'`);
+    const res = await call('POST', '/api/codes/redeem', { cookie: alice.cookie, body: { code: created.json.code } });
+    expect(res.status).toBe(410);
+    expect(res.json.error).toBe('code_expired');
+  });
+
+  it('refuse un code inconnu', async () => {
+    const alice = await login('alice');
+    const res = await call('POST', '/api/codes/redeem', { cookie: alice.cookie, body: { code: 'INEXISTANT' } });
+    expect(res.status).toBe(404);
+    expect(res.json.error).toBe('code_not_found');
+  });
+
+  it('refuse des quantités ou durées absurdes', async () => {
+    const chef = await login('chef');
+    expect((await call('POST', '/api/admin/codes', { cookie: chef.cookie, body: { boosters: 0, maxUses: 1 } })).status).toBe(400);
+    expect((await call('POST', '/api/admin/codes', { cookie: chef.cookie, body: { boosters: 1, maxUses: 0 } })).status).toBe(400);
+    expect((await call('POST', '/api/admin/codes', { cookie: chef.cookie, body: { boosters: 101, maxUses: 1 } })).status).toBe(400);
+  });
+});
+
+describe('vue d\'ensemble admin', () => {
+  it('réserve la vue d\'ensemble aux admins', async () => {
+    const alice = await login('alice');
+    expect((await call('GET', '/api/admin/overview', { cookie: alice.cookie })).status).toBe(403);
+  });
+
+  it('renvoie des statistiques cohérentes', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: alice.id, amount: 2 } });
+    await call('POST', '/api/boosters/open', { cookie: alice.cookie });
+
+    const res = await call('GET', '/api/admin/overview', { cookie: chef.cookie });
+    expect(res.status).toBe(200);
+    expect(res.json.stats.totalUsers).toBe(2);
+    expect(res.json.stats.totalOpenings).toBe(1);
+    expect(res.json.adminLog.length).toBeGreaterThan(0);
+    expect(Array.isArray(res.json.trades)).toBe(true);
+    expect(Array.isArray(res.json.notableOpenings)).toBe(true);
+  });
+});
+
 describe('ouverture de boosters', () => {
   it('ouvre un booster : 5 cartes ajoutées, stock réduit de 1', async () => {
     const chef = await login('chef');

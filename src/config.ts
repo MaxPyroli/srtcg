@@ -21,3 +21,9 @@ export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 /** Nombre maximal de boosters qu'un admin peut offrir d'un coup. */
 export const MAX_GRANT = 100;
+
+/** Nombre maximal d'utilisations pour un code de boosters. */
+export const MAX_CODE_USES = 10_000;
+
+/** Durée de validité maximale d'un code de boosters, en heures (ici : 1 an). */
+export const MAX_CODE_HOURS = 24 * 365;
