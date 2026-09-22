@@ -17,7 +17,9 @@
     --peu_commune: #2f9e6e;
     --rare: #3b6fd4;
     --legendaire: #d69a12;
-    --secrete: #8a45d1;
+    --secrete: #ae2fd7;
+    /* Dégradé des couleurs de la DA SRTV (sans le rose), réservé à la carte secrète. */
+    --secrete-gradient: linear-gradient(135deg, #178ae9, #27b930, #f0de3d, #f12914, #ae2fd7);
     /* Format final d'une carte (ratio ~2.5:3.5, comme une vraie carte à jouer) : ne change pas quand
        de vraies illustrations remplaceront "New art coming soon", seul le contenu de .art changera.
        --card-w sert aux grilles (collection, plusieurs cartes visibles) ; --reveal-w à l'ouverture
@@ -86,6 +88,8 @@
   }
   /* Vraie illustration (quand la carte en a une) : remplit le cadre en plein cadre, comme le placeholder. */
   .card img.art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; padding: 0; }
+  /* Carte secrète : dégradé des couleurs de la DA au lieu de la teinte unie, tant qu'il n'y a pas d'illustration. */
+  .card.r-secrete:not(.card-missing) .art:not(img) { background: var(--secrete-gradient); }
   .card .art-label {
     font-weight: 800; font-size: .8rem; line-height: 1.3; letter-spacing: .03em; text-transform: uppercase;
     color: rgba(255, 255, 255, .6); text-shadow: 0 1px 2px rgba(0, 0, 0, .3);
