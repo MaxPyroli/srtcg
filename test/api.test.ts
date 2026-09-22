@@ -136,6 +136,54 @@ describe('connexion', () => {
     );
     expect(res.status).toBe(403);
   });
+
+  it('normalise les espaces du pseudo (évite les quasi-doublons)', async () => {
+    const created = await call('POST', '/api/dev/login', { body: { name: '  Max   Pyroli  ', password: 'motdepasse1' } });
+    expect(created.status).toBe(200);
+    expect(created.json.displayName).toBe('Max Pyroli');
+    const again = await call('POST', '/api/dev/login', { body: { name: 'Max   Pyroli', password: 'motdepasse1' } });
+    expect(again.status).toBe(200);
+    expect(again.json.id).toBe(created.json.id);
+  });
+});
+
+describe('code d\'invitation', () => {
+  it('aucun code requis par défaut', async () => {
+    const res = await call('GET', '/api/invite-required');
+    expect(res.json).toEqual({ required: false });
+    expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepasse1' } })).status).toBe(200);
+  });
+
+  it('un admin définit un code : il devient requis pour créer un compte', async () => {
+    const chef = await login('chef');
+    expect((await call('POST', '/api/admin/invite-code', { cookie: chef.cookie, body: { code: 'BIENVENUE' } })).status).toBe(200);
+
+    expect((await call('GET', '/api/invite-required')).json).toEqual({ required: true });
+
+    const refused = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepasse1' } });
+    expect(refused.status).toBe(401);
+    expect(refused.json.error).toBe('invite_required');
+
+    const accepted = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepasse1', inviteCode: 'BIENVENUE' } });
+    expect(accepted.status).toBe(200);
+
+    // Une fois le compte créé, plus besoin du code pour se reconnecter.
+    const relogin = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepasse1' } });
+    expect(relogin.status).toBe(200);
+  });
+
+  it('réserve la gestion du code aux admins', async () => {
+    const alice = await login('alice');
+    expect((await call('POST', '/api/admin/invite-code', { cookie: alice.cookie, body: { code: 'X' } })).status).toBe(403);
+  });
+
+  it('un admin retire le code : l\'inscription redevient libre', async () => {
+    const chef = await login('chef');
+    await call('POST', '/api/admin/invite-code', { cookie: chef.cookie, body: { code: 'BIENVENUE' } });
+    await call('POST', '/api/admin/invite-code', { cookie: chef.cookie, body: { code: '' } });
+    expect((await call('GET', '/api/invite-required')).json).toEqual({ required: false });
+    expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepasse1' } })).status).toBe(200);
+  });
 });
 
 describe('administration', () => {

@@ -242,15 +242,19 @@
 
 <main>
   <section id="login" class="panel" hidden>
-    <h2>Connexion de test</h2>
-    <p class="muted">La connexion Twitch remplacera ce formulaire. Choisis un pseudo : la première fois, le mot
-      de passe que tu tapes devient le tien : retape-le à chaque connexion suivante.</p>
+    <h2>Connexion</h2>
+    <p class="muted">Accès réservé pour l'instant aux personnes invitées ; la connexion Twitch remplacera ce
+      formulaire plus tard. Choisis un pseudo : la première fois, le mot de passe que tu tapes devient le
+      tien, à retaper ensuite à chaque connexion.</p>
     <form id="loginForm">
       <label>Pseudo
         <input id="loginName" required minlength="2" maxlength="24" autocomplete="off">
       </label>
-      <label>Ton mot de passe
+      <label>Mot de passe
         <input id="loginPw" type="password" required minlength="4" autocomplete="off">
+      </label>
+      <label id="inviteRow" hidden>Code d'invitation (pour créer ton compte la première fois)
+        <input id="loginInvite" autocomplete="off">
       </label>
       <button class="primary" type="submit">Se connecter</button>
     </form>
@@ -372,14 +376,30 @@
       <div id="adminStats" class="who"></div>
 
       <nav id="adminSubtabs" class="tabs" aria-label="Administration">
-        <button type="button" data-subtab="players" aria-selected="true">Joueurs</button>
+        <button type="button" data-subtab="access" aria-selected="true">Accès</button>
+        <button type="button" data-subtab="players" aria-selected="false">Joueurs</button>
         <button type="button" data-subtab="codes" aria-selected="false">Codes</button>
         <button type="button" data-subtab="log" aria-selected="false">Journal</button>
         <button type="button" data-subtab="trades" aria-selected="false">Échanges</button>
         <button type="button" data-subtab="openings" aria-selected="false">Tirages notables</button>
       </nav>
 
-      <div id="admin-players">
+      <div id="admin-access">
+        <h2>Accès au jeu</h2>
+        <p class="muted">Tant qu'un code est défini, il faut le connaître pour créer un compte (les comptes
+          déjà créés ne sont pas concernés). Retire-le pour ouvrir les inscriptions à tout le monde.</p>
+        <p id="inviteStatus" class="muted"></p>
+        <label>Code d'invitation
+          <input id="inviteCodeInput" autocomplete="off" placeholder="Aucun code : inscription libre">
+        </label>
+        <p>
+          <button id="inviteSaveBtn" class="primary" type="button">Enregistrer</button>
+          <button id="inviteGenerateBtn" class="secondary" type="button">Générer un code</button>
+          <button id="inviteClearBtn" class="secondary" type="button">Retirer (ouvrir à tous)</button>
+        </p>
+      </div>
+
+      <div id="admin-players" hidden>
         <h2>Offrir des boosters</h2>
         <label>Joueur
           <select id="grantUser"></select>
@@ -587,11 +607,13 @@ $('#loginForm').addEventListener('submit', async (event) => {
     const me = await api('POST', '/api/dev/login', {
       name: $('#loginName').value.trim(),
       password: $('#loginPw').value || undefined,
+      inviteCode: $('#loginInvite').value || undefined,
     });
     await enterGame(me);
   } catch (error) {
+    if (error.code === 'invite_required') $('#inviteRow').hidden = false;
     $('#loginError').textContent = error.status === 404
-      ? "La connexion de test est désactivée sur ce serveur."
+      ? 'La connexion est désactivée sur ce serveur.'
       : error.message;
   } finally {
     button.disabled = false;
@@ -628,6 +650,7 @@ function showTab(name) {
     refreshPlayers().then(() => { renderGrantUsers(); renderAccountList(); });
     refreshBoosterCodes();
     refreshAdminOverview();
+    refreshInviteCode();
   }
 }
 
@@ -640,7 +663,7 @@ function showAdminSubtab(name) {
   for (const button of document.querySelectorAll('#adminSubtabs button')) {
     button.setAttribute('aria-selected', String(button.dataset.subtab === name));
   }
-  for (const id of ['players', 'codes', 'log', 'trades', 'openings']) $(`#admin-${id}`).hidden = id !== name;
+  for (const id of ['access', 'players', 'codes', 'log', 'trades', 'openings']) $(`#admin-${id}`).hidden = id !== name;
 }
 
 document.querySelector('#adminSubtabs').addEventListener('click', (event) => {
@@ -1072,6 +1095,35 @@ async function refreshProfilesTab() {
 
 // --- Administration --------------------------------------------------------
 
+async function refreshInviteCode() {
+  const { code } = await api('GET', '/api/admin/invite-code');
+  $('#inviteCodeInput').value = code ?? '';
+  $('#inviteStatus').textContent = code
+    ? "Code actif : il faut le connaître pour créer un compte."
+    : "Aucun code : n'importe qui avec le lien peut créer un compte.";
+}
+
+async function saveInviteCode(code) {
+  await api('POST', '/api/admin/invite-code', { code: code ?? '' });
+  await refreshInviteCode();
+}
+
+$('#inviteSaveBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
+  await saveInviteCode($('#inviteCodeInput').value.trim());
+  say('Code enregistré.');
+}));
+
+$('#inviteGenerateBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
+  const code = Math.random().toString(36).slice(2, 10).toUpperCase();
+  await saveInviteCode(code);
+  say('Nouveau code généré.');
+}));
+
+$('#inviteClearBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
+  await saveInviteCode(null);
+  say('Code retiré : inscription libre.');
+}));
+
 function renderGrantUsers() {
   $('#grantUser').replaceChildren(...state.players.map((p) => h('option', { value: p.id }, p.displayName)));
 }
@@ -1174,6 +1226,7 @@ const ADMIN_ACTIONS = {
   create_code: 'Code créé',
   reset_password: 'Mot de passe réinitialisé',
   delete_user: 'Compte supprimé',
+  set_invite_code: "Code d'invitation modifié",
 };
 
 function renderAdminLog(entries) {
@@ -1214,6 +1267,10 @@ function renderAdminOpenings(openings) {
   try {
     await enterGame(await api('GET', '/api/me'));
   } catch {
+    try {
+      const { required } = await api('GET', '/api/invite-required');
+      $('#inviteRow').hidden = !required;
+    } catch { /* si ça échoue, tant pis : le champ reste caché, le serveur tranchera au besoin */ }
     $('#login').hidden = false;
   }
 })();

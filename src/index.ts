@@ -29,6 +29,9 @@ import {
   listMyOpenings,
   getProfile,
   updateProfile,
+  getSetting,
+  setInviteCode,
+  INVITE_CODE_KEY,
 } from './db.ts';
 import type { TradeOutcome } from './db.ts';
 
@@ -121,13 +124,15 @@ const requireAdmin = async (c: Context<AppEnv>, next: () => Promise<void>) => {
  * Connexion de test, sans Twitch. Désactivée par défaut : elle n'existe que si DEV_AUTH vaut "1".
  * Chaque pseudo a son propre mot de passe, choisi librement à la première connexion (premier
  * arrivé, premier servi, comme un pseudo Discord). Un joueur qui l'oublie doit demander à un admin
- * de le réinitialiser (POST /api/admin/users/:id/reset-password).
+ * de le réinitialiser (POST /api/admin/users/:id/reset-password). Créer un compte demande le code
+ * d'invitation courant, tant que l'admin en a défini un (POST /api/admin/invite-code).
  * À remplacer par la connexion Twitch avant d'ouvrir le jeu à la communauté.
  */
 app.post('/api/dev/login', async (c) => {
   if (c.env.DEV_AUTH !== '1') return c.json({ error: 'not_found', message: 'Introuvable.' }, 404);
   const body = await readJson(c);
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  // Espaces multiples ou en bordure : source de quasi-doublons de pseudo (ex. "Max" et "Max ").
+  const name = typeof body.name === 'string' ? body.name.trim().replace(/\s+/g, ' ') : '';
   if (!/^[\p{L}\p{N}_ -]{2,24}$/u.test(name)) {
     throw new GameError('bad_name', 400, 'Le pseudo doit faire 2 à 24 caractères (lettres, chiffres, espace, - ou _).');
   }
@@ -136,6 +141,7 @@ app.post('/api/dev/login', async (c) => {
     name,
     isAdmin: admins.includes(name.toLowerCase()),
     password: typeof body.password === 'string' ? body.password : undefined,
+    inviteCode: typeof body.inviteCode === 'string' ? body.inviteCode : undefined,
   });
   await startSession(c, user);
   return c.json(publicUser(user));
@@ -155,6 +161,13 @@ function publicUser(user: UserRow) {
 // ---------------------------------------------------------------------------
 
 app.get('/api/health', (c) => c.json({ ok: true }));
+
+/** Le formulaire de connexion en a besoin avant même d'être connecté, pour savoir s'il doit demander un code d'invitation. */
+app.get('/api/invite-required', async (c) => {
+  if (c.env.DEV_AUTH !== '1') return c.json({ required: false });
+  const code = await getSetting(c.env.DB, INVITE_CODE_KEY);
+  return c.json({ required: code != null });
+});
 
 // ---------------------------------------------------------------------------
 // Routes réservées aux joueurs connectés
@@ -273,6 +286,15 @@ app.delete('/api/admin/users/:id', async (c) => {
   const id = idParam(c.req.param('id'), 'id');
   await deleteUser(c.env.DB, c.get('user').id, id);
   return c.json({ ok: true });
+});
+
+app.get('/api/admin/invite-code', async (c) => c.json({ code: await getSetting(c.env.DB, INVITE_CODE_KEY) }));
+
+app.post('/api/admin/invite-code', async (c) => {
+  const body = await readJson(c);
+  const code = typeof body.code === 'string' ? body.code.trim() : '';
+  await setInviteCode(c.env.DB, c.get('user').id, code || null);
+  return c.json({ code: code || null });
 });
 
 app.post('/api/admin/codes', async (c) => {

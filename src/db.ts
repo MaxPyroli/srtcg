@@ -106,17 +106,38 @@ export async function getUser(db: D1Database, id: number): Promise<UserRow | nul
 /** Mot de passe minimal pour la connexion de test : pas un vrai système de comptes, juste éviter le vide. */
 const DEV_PASSWORD_MIN_LENGTH = 4;
 
+/** Réglages génériques de l'application (gérés depuis l'admin, pas des secrets Cloudflare). */
+export async function getSetting(db: D1Database, key: string): Promise<string | null> {
+  const row = await db.prepare('SELECT value FROM app_settings WHERE key = ?1').bind(key).first<{ value: string | null }>();
+  return row?.value ?? null;
+}
+
+export async function setSetting(db: D1Database, key: string, value: string | null): Promise<void> {
+  if (value == null) {
+    await db.prepare('DELETE FROM app_settings WHERE key = ?1').bind(key).run();
+  } else {
+    await db
+      .prepare('INSERT INTO app_settings (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+      .bind(key, value)
+      .run();
+  }
+}
+
+export const INVITE_CODE_KEY = 'invite_code';
+
 /**
  * Connexion de test : chaque pseudo a son propre mot de passe, choisi à la première connexion
  * (premier arrivé, premier servi sur le pseudo, comme un pseudo Discord). Si un joueur oublie le
  * sien, un admin peut le réinitialiser (resetPassword ci-dessous).
- * - Nouveau pseudo, ou pseudo déjà utilisé mais sans mot de passe personnel (compte créé avant
- *   cette fonctionnalité, ou réinitialisé par un admin) : le mot de passe fourni devient le sien.
+ * - Nouveau pseudo : le code d'invitation (s'il est défini) doit correspondre, puis le mot de
+ *   passe fourni devient le sien.
+ * - Pseudo déjà utilisé mais sans mot de passe personnel (compte créé avant cette fonctionnalité,
+ *   ou réinitialisé par un admin) : pas besoin du code d'invitation, le mot de passe fourni devient le sien.
  * - Pseudo avec mot de passe personnel : il doit correspondre.
  */
 export async function devLogin(
   db: D1Database,
-  input: { name: string; isAdmin: boolean; password: string | undefined },
+  input: { name: string; isAdmin: boolean; password: string | undefined; inviteCode: string | undefined },
 ): Promise<UserRow> {
   const twitchId = `dev:${input.name.toLowerCase()}`;
   const existing = await db
@@ -125,6 +146,12 @@ export async function devLogin(
     .first<UserRow & { password_hash: string | null; password_salt: string | null }>();
 
   if (!existing || !existing.password_hash || !existing.password_salt) {
+    if (!existing) {
+      const requiredInvite = await getSetting(db, INVITE_CODE_KEY);
+      if (requiredInvite && input.inviteCode !== requiredInvite) {
+        throw new GameError('invite_required', 401, "Code d'invitation incorrect.");
+      }
+    }
     if (!input.password || input.password.length < DEV_PASSWORD_MIN_LENGTH) {
       throw new GameError('weak_password', 400, `Choisis un mot de passe d'au moins ${DEV_PASSWORD_MIN_LENGTH} caractères.`);
     }
@@ -155,6 +182,20 @@ export async function devLogin(
     .first<UserRow>();
   if (!user) throw new Error('Connexion impossible');
   return user;
+}
+
+/** Admin : définit (ou retire, si null) le code d'invitation requis pour créer un compte. */
+export async function setInviteCode(db: D1Database, adminId: number, code: string | null): Promise<void> {
+  await db.batch([
+    code == null
+      ? db.prepare('DELETE FROM app_settings WHERE key = ?1').bind(INVITE_CODE_KEY)
+      : db
+          .prepare('INSERT INTO app_settings (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+          .bind(INVITE_CODE_KEY, code),
+    db
+      .prepare("INSERT INTO admin_log (admin_id, action, details) VALUES (?1, 'set_invite_code', ?2)")
+      .bind(adminId, JSON.stringify({ enabled: code != null })),
+  ]);
 }
 
 /** Admin : efface le mot de passe d'un joueur. Il en choisit un nouveau à sa prochaine connexion. */
