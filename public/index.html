@@ -18,6 +18,10 @@
     --rare: #3b6fd4;
     --legendaire: #d69a12;
     --secrete: #8a45d1;
+    /* Format final d'une carte (ratio ~2.5:3.5, comme une vraie carte à jouer) : ne change pas quand
+       de vraies illustrations remplaceront "New art coming soon", seul le contenu de .art changera. */
+    --card-w: clamp(138px, 42vw, 190px);
+    --card-h: calc(var(--card-w) * 1.4);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--encre);
     background: var(--fond);
@@ -54,20 +58,20 @@
   .cards { display: flex; flex-wrap: wrap; gap: 14px; }
   .cards[hidden] { display: none; }
   .card {
-    position: relative; width: 128px; height: 176px; padding: 10px;
+    position: relative; width: var(--card-w); height: var(--card-h); padding: 8px;
     background: #fff; border: 3px solid var(--c); border-radius: 10px;
-    display: flex; flex-direction: column; gap: 8px; text-align: left;
+    display: flex; flex-direction: column; gap: 6px; text-align: left;
   }
   .card .art {
-    width: 100%; height: 86px; border-radius: 6px; flex: none; overflow: hidden;
+    width: 100%; border-radius: 6px; flex: 1; min-height: 0; overflow: hidden;
     background: color-mix(in srgb, var(--c) 65%, #1b2430 15%);
     display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px;
   }
   .card .art-label {
-    font-weight: 800; font-size: .62rem; line-height: 1.3; letter-spacing: .03em; text-transform: uppercase;
+    font-weight: 800; font-size: .7rem; line-height: 1.3; letter-spacing: .03em; text-transform: uppercase;
     color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
   }
-  .card .texte { display: flex; flex-direction: column; justify-content: space-between; flex: 1; min-height: 0; }
+  .card .texte { display: flex; flex-direction: column; justify-content: space-between; flex: none; }
   .card .nom { font-weight: 600; }
   .card .rar { font-size: .85rem; color: var(--c); font-weight: 600; }
   .card .qte { position: absolute; top: -10px; right: -10px; background: var(--encre); color: #fff; border-radius: 999px; min-width: 28px; padding: 1px 8px; font-size: .85rem; text-align: center; }
@@ -79,7 +83,7 @@
   .r-secrete { --c: var(--secrete); box-shadow: 0 0 20px var(--c); }
 
   /* Ouverture d'un booster : la carte se retourne quand on la touche */
-  .flip { perspective: 700px; width: 128px; height: 176px; padding: 0; border: 0; background: none; }
+  .flip { perspective: 700px; width: var(--card-w); height: var(--card-h); padding: 0; border: 0; background: none; }
   .flip-inner { position: relative; width: 100%; height: 100%; transition: transform .55s; transform-style: preserve-3d; }
   .flip.open .flip-inner { transform: rotateY(180deg); }
   .flip-back, .flip-front { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 10px; }
@@ -92,7 +96,7 @@
   .pack { display: flex; justify-content: center; margin: 6px 0 18px; }
   .pack[hidden] { display: none; }
   .pack-btn {
-    width: 128px; height: 176px; padding: 0; border: 3px solid #1b2430; border-radius: 10px;
+    width: var(--card-w); height: var(--card-h); padding: 0; border: 3px solid #1b2430; border-radius: 10px;
     background: repeating-linear-gradient(45deg, #26303d, #26303d 8px, #2e3a49 8px, #2e3a49 16px);
     color: #fff; font-weight: 600; font-size: .82rem;
   }
@@ -107,9 +111,9 @@
   @keyframes pack-burst { to { transform: scale(1.3); opacity: 0; } }
 
   /* Pile de cartes révélées une par une */
-  .stack { position: relative; width: 128px; height: 176px; margin: 6px auto 18px; }
+  .stack { position: relative; width: var(--card-w); height: var(--card-h); margin: 6px auto 18px; }
   .stack .flip { position: absolute; inset: 0; transition: transform .25s ease, opacity .4s ease; }
-  .stack .flip.flyout { transform: translate(170px, -34px) rotate(18deg) !important; opacity: 0; }
+  .stack .flip.flyout { transform: translate(220%, -40%) rotate(18deg) !important; opacity: 0; }
   .stack .flip.flash .flip-front .card { animation: card-flash .7s ease; }
   .stack .flip:nth-child(1) { z-index: 5; transform: translate(0, 0) rotate(0deg); }
   .stack .flip:nth-child(2) { z-index: 4; transform: translate(4px, 6px) rotate(-2deg); }
