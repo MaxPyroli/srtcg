@@ -115,7 +115,17 @@
   .r-peu_commune { --c: var(--peu_commune); }
   .r-rare { --c: var(--rare); box-shadow: 0 0 10px var(--c); }
   .r-legendaire { --c: var(--legendaire); box-shadow: 0 0 16px var(--c); }
-  .r-secrete { --c: var(--secrete); box-shadow: 0 0 20px var(--c); }
+  /* Halo multicolore (les 5 couleurs de l'équipe) plutôt qu'une lueur unie : un box-shadow ne peut
+     pas prendre un dégradé, donc on superpose une ombre de chaque couleur, décalée tout autour. */
+  .r-secrete {
+    --c: var(--secrete);
+    box-shadow:
+      0 -6px 18px #178ae9,
+      6px -3px 18px #27b930,
+      6px 6px 18px #f0de3d,
+      -6px 6px 18px #f12914,
+      -6px -3px 18px #ae2fd7;
+  }
 
   /* Ouverture d'un booster : la carte se retourne quand on la touche */
   .flip { perspective: 700px; width: var(--card-w); height: var(--card-h); padding: 0; border: 0; background: none; }
@@ -165,12 +175,21 @@
   .stack .flip { position: absolute; inset: 0; width: 100%; height: 100%; transition: transform .25s ease, opacity .4s ease; }
   .stack .flip.flyout { transform: translate(220%, -40%) rotate(18deg) !important; opacity: 0; }
   .stack .flip.flash .flip-front .card { animation: card-flash .7s ease; }
+  .stack .flip.flash .flip-front .card.r-secrete { animation: card-flash-secrete .7s ease; }
   .stack .flip:nth-child(1) { z-index: 5; transform: translate(0, 0) rotate(0deg); }
   .stack .flip:nth-child(2) { z-index: 4; transform: translate(4px, 6px) rotate(-2deg); }
   .stack .flip:nth-child(3) { z-index: 3; transform: translate(8px, 12px) rotate(-4deg); }
   .stack .flip:nth-child(4) { z-index: 2; transform: translate(12px, 18px) rotate(-6deg); }
   .stack .flip:nth-child(5) { z-index: 1; transform: translate(16px, 24px) rotate(-8deg); }
   @keyframes card-flash { 0%, 100% { box-shadow: 0 0 16px var(--c); } 40% { box-shadow: 0 0 46px var(--c); } }
+  @keyframes card-flash-secrete {
+    0%, 100% {
+      box-shadow: 0 -5px 16px #178ae9, 5px -2px 16px #27b930, 5px 5px 16px #f0de3d, -5px 5px 16px #f12914, -5px -2px 16px #ae2fd7;
+    }
+    40% {
+      box-shadow: 0 -14px 42px #178ae9, 14px -7px 42px #27b930, 14px 14px 42px #f0de3d, -14px 14px 42px #f12914, -14px -7px 42px #ae2fd7;
+    }
+  }
 
   /* Les cartes sortent en éventail de derrière le paquet à l'ouverture. */
   @keyframes card-enter { from { transform: translateY(26px) scale(.8); opacity: 0; } }
@@ -226,7 +245,8 @@
 
   @media (prefers-reduced-motion: reduce) {
     .flip-inner { transition: none; }
-    .pack.shake .pack-btn, .pack.burst .pack-btn, .stack .flip.flash .flip-front .card, .stack .flip.entering { animation: none; }
+    .pack.shake .pack-btn, .pack.burst .pack-btn, .stack .flip.flash .flip-front .card,
+    .stack .flip.flash .flip-front .card.r-secrete, .stack .flip.entering { animation: none; }
     .stack .flip { transition: none; }
   }
 
