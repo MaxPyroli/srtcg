@@ -120,6 +120,22 @@
     background: repeating-linear-gradient(45deg, #26303d, #26303d 8px, #2e3a49 8px, #2e3a49 16px);
     color: #fff; font-weight: 600; font-size: .82rem;
   }
+
+  /* Pile des boosters disponibles, avant même de toucher pour ouvrir. */
+  .pack-pile { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .pack-pile:disabled { cursor: not-allowed; }
+  .pack-pile:focus-visible { outline: 3px solid #f2a900; outline-offset: 2px; }
+  .pile-stack { position: relative; width: var(--card-w); height: var(--card-h); }
+  .pile-stack .layer {
+    position: absolute; inset: 0; border-radius: 10px; border: 3px solid #1b2430;
+    background: repeating-linear-gradient(45deg, #26303d, #26303d 8px, #2e3a49 8px, #2e3a49 16px);
+  }
+  .pile-stack .layer:nth-child(1) { z-index: 4; transform: translate(0, 0) rotate(0deg); }
+  .pile-stack .layer:nth-child(2) { z-index: 3; transform: translate(4px, 5px) rotate(-2deg); }
+  .pile-stack .layer:nth-child(3) { z-index: 2; transform: translate(8px, 10px) rotate(-4deg); }
+  .pile-stack .layer:nth-child(4) { z-index: 1; transform: translate(12px, 15px) rotate(-6deg); }
+  .pile-stack .count { position: absolute; top: -10px; right: -10px; background: var(--encre); color: #fff; border-radius: 999px; min-width: 28px; padding: 1px 8px; font-size: .85rem; text-align: center; z-index: 5; }
+  .pile-hint { color: var(--discret); font-size: .9rem; }
   .pack.shake .pack-btn { animation: pack-shake .5s ease; }
   .pack.burst .pack-btn { animation: pack-burst .26s ease forwards; }
   @keyframes pack-shake {
@@ -253,8 +269,11 @@
     <div id="tab-booster" class="panel">
       <h2>Ouvrir un booster</h2>
       <p id="boosterInfo" class="muted"></p>
-      <p><button id="openBtn" class="primary" type="button">Ouvrir un booster</button>
-         <button id="revealAll" class="secondary" type="button" hidden>Tout révéler</button></p>
+      <button id="openBtn" class="pack-pile" type="button">
+        <span id="pileStack" class="pile-stack" aria-hidden="true"></span>
+        <span id="pileHint" class="pile-hint"></span>
+      </button>
+      <p><button id="revealAll" class="secondary" type="button" hidden>Tout révéler</button></p>
       <div id="pack" class="pack" hidden>
         <button id="packBtn" class="pack-btn" type="button">Toucher pour ouvrir</button>
       </div>
@@ -538,6 +557,17 @@ function renderWho() {
     ? `Tu as ${state.me.boosters} booster${state.me.boosters > 1 ? 's' : ''} à ouvrir.`
     : "Tu n'as aucun booster pour le moment. Un administrateur peut t'en offrir.";
   $('#openBtn').disabled = state.me.boosters === 0;
+  renderPile();
+}
+
+/** La pile visuelle de boosters disponibles (jusqu'à 4 couches empilées + un compteur). */
+function renderPile() {
+  const n = state.me.boosters;
+  const layers = Math.min(n, 4);
+  $('#pileStack').replaceChildren(
+    ...Array.from({ length: layers }, () => h('div', { class: 'layer' })),
+    n > 1 ? h('span', { class: 'count' }, `×${n}`) : null);
+  $('#pileHint').textContent = n > 0 ? 'Toucher pour ouvrir' : '';
 }
 
 async function enterGame(me) {
