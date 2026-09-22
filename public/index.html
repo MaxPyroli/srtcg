@@ -603,10 +603,9 @@ async function guarded(button, action) {
 
 // --- Cartes ----------------------------------------------------------------
 
-/** Le nom contient déjà la rareté et le numéro (ex. « Rare 07 »), en attendant les vraies illustrations. */
-function cardNumber(name) {
-  const match = /\d+/.exec(name);
-  return match ? match[0] : '';
+/** Numéro de la carte dans la série entière (pas par rareté) : l'id de la carte, sur 3 chiffres. */
+function cardNumber(id) {
+  return String(id).padStart(3, '0');
 }
 
 /** Carte plein cadre : le visuel (provisoirement "New art coming soon") remplit toute la carte,
@@ -618,7 +617,7 @@ function cardView(card, { quantity, reserved, numberOnly } = {}) {
     reserved > 0 ? h('span', { class: 'res' }, `${reserved} bloquée${reserved > 1 ? 's' : ''}`) : null,
     h('div', { class: 'face' },
       h('div', { class: 'art' }, numberOnly
-        ? h('span', { class: 'num' }, cardNumber(card.name))
+        ? h('span', { class: 'num' }, cardNumber(card.id))
         : h('span', { class: 'art-label' }, 'New art', h('br'), 'coming soon')),
       numberOnly ? null : h('span', { class: 'nom' }, card.name)));
 }
@@ -627,7 +626,7 @@ function cardView(card, { quantity, reserved, numberOnly } = {}) {
 function emptyCardView(card) {
   return h('div', { class: `card card-missing r-${card.rarity}`, 'aria-hidden': 'true' },
     h('div', { class: 'face' },
-      h('div', { class: 'art' }, h('span', { class: 'num' }, cardNumber(card.name)))));
+      h('div', { class: 'art' }, h('span', { class: 'num' }, cardNumber(card.id)))));
 }
 
 /** Une carte cliquable, pour la revoir en grand (récap d'ouverture, historique). */
