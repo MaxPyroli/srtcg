@@ -838,7 +838,8 @@ function renderTheirCards() {
       renderTheirCards();
       renderMyCards();
     },
-  }, cardView({ name: c.name, rarity: c.rarity }))) : [h('p', { class: 'muted' }, "Ce joueur n'a aucune carte échangeable pour l'instant.")]));
+  }, cardView({ name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved })))
+    : [h('p', { class: 'muted' }, "Ce joueur n'a aucune carte échangeable pour l'instant.")]));
 }
 
 function renderMyCards() {
