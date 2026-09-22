@@ -666,9 +666,9 @@ function renderWho() {
 function renderPile() {
   const n = state.me.boosters;
   const layers = Math.min(n, 4);
-  $('#pileStack').replaceChildren(
-    ...Array.from({ length: layers }, (_, i) => h('div', { class: 'layer' }, i === 0 ? 'Booster' : null)),
-    n > 1 ? h('span', { class: 'count' }, `×${n}`) : null);
+  const children = Array.from({ length: layers }, (_, i) => h('div', { class: 'layer' }, i === 0 ? 'Booster' : null));
+  if (n > 1) children.push(h('span', { class: 'count' }, `×${n}`));
+  $('#pileStack').replaceChildren(...children);
 }
 
 async function enterGame(me) {
