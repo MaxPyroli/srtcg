@@ -483,15 +483,15 @@ function cardView(card, { quantity, reserved } = {}) {
 }
 
 /** Une carte cliquable, pour la revoir en grand (récap d'ouverture, historique). */
-function cardButton(card) {
+function cardButton(card, opts = {}) {
   return h('button', {
     type: 'button', class: 'card-btn', 'aria-label': `Voir ${card.name} en grand`,
-    onclick: () => openCardModal(card),
-  }, cardView(card));
+    onclick: () => openCardModal(card, opts),
+  }, cardView(card, opts));
 }
 
-function openCardModal(card) {
-  $('#cardModalContent').replaceChildren(cardView(card));
+function openCardModal(card, opts = {}) {
+  $('#cardModalContent').replaceChildren(cardView(card, opts));
   $('#cardModal').hidden = false;
 }
 
@@ -766,7 +766,7 @@ function renderCollection() {
 
   const shown = owned.filter((c) => state.filter === 'all' || c.rarity === state.filter);
   $('#collectionGrid').replaceChildren(...(shown.length
-    ? shown.map((c) => cardView({ name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved }))
+    ? shown.map((c) => cardButton({ id: c.cardId, name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved }))
     : [h('p', { class: 'muted' }, owned.length ? 'Aucune carte de cette rareté.' : "Ta collection est vide : ouvre un booster pour commencer.")]));
 }
 
@@ -975,7 +975,7 @@ async function viewProfile(id) {
     : '';
   const owned = cards.filter((c) => c.quantity > 0);
   $('#viewedCollection').replaceChildren(...(owned.length
-    ? owned.map((c) => cardView({ name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved }))
+    ? owned.map((c) => cardButton({ id: c.cardId, name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved }))
     : [h('p', { class: 'muted' }, 'Collection vide pour le moment.')]));
 }
 
