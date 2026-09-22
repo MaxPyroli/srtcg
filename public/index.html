@@ -64,6 +64,11 @@
   /* Cartes */
   .cards { display: flex; flex-wrap: wrap; gap: 14px; }
   .cards[hidden] { display: none; }
+
+  /* Collection : toute la série en grille de 5, avec un emplacement vide pour ce qui manque. */
+  #collectionGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  #collectionGrid .card { width: 100%; height: auto; aspect-ratio: 2.5 / 3.5; }
+  .card-empty { border: 2px dashed var(--trait); border-radius: 10px; aspect-ratio: 2.5 / 3.5; }
   .card {
     position: relative; width: var(--card-w); height: var(--card-h);
     border: 3px solid var(--c); border-radius: 10px; text-align: left;
@@ -764,10 +769,15 @@ function renderCollection() {
       onclick: () => { state.filter = key; renderCollection(); },
     }, key === 'all' ? 'Toutes' : RARITIES[key])));
 
-  const shown = owned.filter((c) => state.filter === 'all' || c.rarity === state.filter);
-  $('#collectionGrid').replaceChildren(...(shown.length
-    ? shown.map((c) => cardButton({ id: c.cardId, name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved }))
-    : [h('p', { class: 'muted' }, owned.length ? 'Aucune carte de cette rareté.' : "Ta collection est vide : ouvre un booster pour commencer.")]));
+  // Toute la série de la rareté choisie, avec un emplacement vide pour ce qui manque encore.
+  const byCardId = new Map(owned.map((c) => [c.cardId, c]));
+  const series = state.catalog.filter((c) => state.filter === 'all' || c.rarity === state.filter);
+  $('#collectionGrid').replaceChildren(...series.map((c) => {
+    const entry = byCardId.get(c.id);
+    return entry
+      ? cardButton({ id: c.id, name: c.name, rarity: c.rarity }, { quantity: entry.quantity, reserved: entry.reserved })
+      : h('div', { class: 'card-empty', 'aria-hidden': 'true' });
+  }));
 }
 
 // --- Échanges --------------------------------------------------------------
