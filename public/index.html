@@ -84,12 +84,16 @@
     background: color-mix(in srgb, var(--c) 65%, #1b2430 15%);
     display: flex; align-items: center; justify-content: center; text-align: center; padding: 10%;
   }
+  /* Vraie illustration (quand la carte en a une) : remplit le cadre en plein cadre, comme le placeholder. */
+  .card img.art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; padding: 0; }
   .card .art-label {
     font-weight: 800; font-size: .8rem; line-height: 1.3; letter-spacing: .03em; text-transform: uppercase;
     color: rgba(255, 255, 255, .6); text-shadow: 0 1px 2px rgba(0, 0, 0, .3);
   }
-  /* Dans la collection, on affiche juste le numéro au centre (la rareté se voit déjà à la couleur). */
+  /* Dans la collection, on affiche juste le numéro au centre (la rareté se voit déjà à la couleur),
+     en overlay par-dessus l'illustration (ou le placeholder) plutôt qu'à la place. */
   .card .num {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     font-weight: 800; font-size: 1.7rem; color: rgba(255, 255, 255, .85); text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
   }
   /* Le nom contient déjà la rareté et le numéro (ex. « Rare 07 ») : sert de sous-titre provisoire. */
@@ -192,7 +196,9 @@
     display: flex; align-items: center; justify-content: center; padding: 24px; cursor: pointer;
   }
   .card-modal[hidden] { display: none; }
+  #cardModalContent { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   #cardModalContent .card { width: var(--reveal-w); height: var(--reveal-h); cursor: default; }
+  #cardModalContent .card-modal-number { color: #fff; font-weight: 700; letter-spacing: .04em; margin: 0; }
 
   #tradeModalContent { cursor: default; max-width: 420px; width: 100%; text-align: center; margin-bottom: 0; }
   #tradeModalContent h2 { text-align: left; }
@@ -608,25 +614,34 @@ function cardNumber(id) {
   return String(id).padStart(3, '0');
 }
 
-/** Carte plein cadre : le visuel (provisoirement "New art coming soon") remplit toute la carte,
- * le nom s'affiche en overlay en bas. Dans la collection (numberOnly), on affiche juste le numéro
- * au centre : la couleur du cadre suffit à indiquer la rareté. */
-function cardView(card, { quantity, reserved, numberOnly } = {}) {
+/** Le visuel de la carte : la vraie illustration si la carte en a une, sinon le placeholder habituel. */
+function cardArt(card) {
+  return card.image
+    ? h('img', { class: 'art', src: card.image, alt: '' })
+    : h('div', { class: 'art' }, h('span', { class: 'art-label' }, 'New art', h('br'), 'coming soon'));
+}
+
+/** Carte plein cadre : le visuel remplit toute la carte. Par-dessus, selon le contexte (overlay) :
+ * le nom en bas ('name', récap/historique/échanges), le numéro au centre ('number', emplacements
+ * manquants de la collection), ou rien du tout ('none', cartes déjà possédées dans la collection —
+ * la couleur du cadre suffit à indiquer la rareté, le numéro ne s'affiche qu'en grand, voir openCardModal). */
+function cardView(card, { quantity, reserved, overlay = 'name' } = {}) {
   return h('div', { class: `card r-${card.rarity}` },
     quantity > 1 ? h('span', { class: 'qte' }, `×${quantity}`) : null,
     reserved > 0 ? h('span', { class: 'res' }, `${reserved} bloquée${reserved > 1 ? 's' : ''}`) : null,
     h('div', { class: 'face' },
-      h('div', { class: 'art' }, numberOnly
-        ? h('span', { class: 'num' }, cardNumber(card.id))
-        : h('span', { class: 'art-label' }, 'New art', h('br'), 'coming soon')),
-      numberOnly ? null : h('span', { class: 'nom' }, card.name)));
+      cardArt(card),
+      overlay === 'number' ? h('span', { class: 'num' }, cardNumber(card.id))
+        : overlay === 'none' ? null
+        : h('span', { class: 'nom' }, card.name)));
 }
 
 /** Emplacement d'une carte pas encore obtenue : cadre coloré par rareté, numéro au centre, atténué. */
 function emptyCardView(card) {
   return h('div', { class: `card card-missing r-${card.rarity}`, 'aria-hidden': 'true' },
     h('div', { class: 'face' },
-      h('div', { class: 'art' }, h('span', { class: 'num' }, cardNumber(card.id)))));
+      h('div', { class: 'art' }),
+      h('span', { class: 'num' }, cardNumber(card.id))));
 }
 
 /** Une carte cliquable, pour la revoir en grand (récap d'ouverture, historique). */
@@ -638,7 +653,9 @@ function cardButton(card, opts = {}) {
 }
 
 function openCardModal(card, opts = {}) {
-  $('#cardModalContent').replaceChildren(cardView(card, opts));
+  $('#cardModalContent').replaceChildren(
+    cardView(card, opts),
+    opts.overlay === 'none' ? h('p', { class: 'card-modal-number' }, `N° ${cardNumber(card.id)}`) : null);
   $('#cardModal').hidden = false;
 }
 
@@ -999,7 +1016,7 @@ function renderCollection() {
   $('#collectionGrid').replaceChildren(...series.map((c) => {
     const entry = byCardId.get(c.id);
     return entry
-      ? cardButton({ id: c.id, name: c.name, rarity: c.rarity }, { quantity: entry.quantity, reserved: entry.reserved, numberOnly: true })
+      ? cardButton({ id: c.id, name: c.name, rarity: c.rarity, image: c.image }, { quantity: entry.quantity, reserved: entry.reserved, overlay: 'none' })
       : emptyCardView(c);
   }));
 }
@@ -1072,7 +1089,7 @@ function renderTheirCards() {
       renderTheirCards();
       renderMyCards();
     },
-  }, cardView({ name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved })))
+  }, cardView({ name: c.name, rarity: c.rarity, image: c.image }, { quantity: c.quantity, reserved: c.reserved })))
     : [h('p', { class: 'muted' }, "Ce joueur n'a aucune carte échangeable pour l'instant.")]));
 }
 
@@ -1084,7 +1101,7 @@ function renderMyCards() {
   $('#myCardsGrid').replaceChildren(...(mine.length ? mine.map((c) => h('button', {
     type: 'button', class: 'card-pick' + (tradeState.give === c.cardId ? ' picked' : ''), 'aria-label': `Offrir ${c.name}`,
     onclick: () => { tradeState.give = c.cardId; $('#proposeBtn').hidden = false; renderMyCards(); },
-  }, cardView({ name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved })))
+  }, cardView({ name: c.name, rarity: c.rarity, image: c.image }, { quantity: c.quantity, reserved: c.reserved })))
     : [h('p', { class: 'muted' }, wanted ? `Tu n'as aucune carte ${RARITIES[wanted.rarity].toLowerCase()} à offrir.` : '')]));
 }
 
@@ -1227,7 +1244,7 @@ async function viewProfile(id) {
     : '';
   const owned = cards.filter((c) => c.quantity > 0);
   $('#viewedCollection').replaceChildren(...(owned.length
-    ? owned.map((c) => cardButton({ id: c.cardId, name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved }))
+    ? owned.map((c) => cardButton({ id: c.cardId, name: c.name, rarity: c.rarity, image: c.image }, { quantity: c.quantity, reserved: c.reserved }))
     : [h('p', { class: 'muted' }, 'Collection vide pour le moment.')]));
 }
 

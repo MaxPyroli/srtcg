@@ -8,6 +8,8 @@ export interface CardRow {
   name: string;
   rarity: Rarity;
   tradable: number;
+  /** Chemin d'une vraie illustration (ex. /img/cards/rare-01.png), vide tant qu'il n'y en a pas. */
+  image: string | null;
 }
 
 export interface UserRow {

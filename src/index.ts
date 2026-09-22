@@ -201,7 +201,7 @@ app.get('/api/me', (c) => c.json(publicUser(c.get('user'))));
 
 app.get('/api/cards', async (c) => {
   const { cards } = await getCatalog(c.env.DB);
-  return c.json(cards.map((k) => ({ id: k.id, name: k.name, rarity: k.rarity, tradable: k.tradable === 1 })));
+  return c.json(cards.map((k) => ({ id: k.id, name: k.name, rarity: k.rarity, tradable: k.tradable === 1, image: k.image })));
 });
 
 // Les collections sont visibles par tous les joueurs connectés.
@@ -238,7 +238,7 @@ app.post('/api/boosters/open', async (c) => {
   return c.json({
     kind: opened.kind,
     boostersLeft: opened.boostersLeft,
-    cards: opened.cards.map((k) => ({ id: k.id, name: k.name, rarity: k.rarity })),
+    cards: opened.cards.map((k) => ({ id: k.id, name: k.name, rarity: k.rarity, image: k.image })),
   });
 });
 

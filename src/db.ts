@@ -80,7 +80,7 @@ export async function getCatalog(db: D1Database): Promise<CatalogData> {
   const hit = catalogCache.get(db);
   if (hit && Date.now() - hit.at < CATALOG_TTL_MS) return hit.data;
 
-  const { results } = await db.prepare('SELECT id, slug, name, rarity, tradable FROM cards ORDER BY id').all<CardRow>();
+  const { results } = await db.prepare('SELECT id, slug, name, rarity, tradable, image FROM cards ORDER BY id').all<CardRow>();
   const catalog = Object.fromEntries(RARITIES.map((r) => [r, [] as number[]])) as Catalog;
   const byId = new Map<number, CardRow>();
   for (const card of results) {
@@ -373,6 +373,7 @@ export interface CollectionEntry {
   name: string;
   rarity: Rarity;
   tradable: number;
+  image: string | null;
   quantity: number;
   reserved: number;
 }
@@ -380,7 +381,7 @@ export interface CollectionEntry {
 export async function listCollection(db: D1Database, userId: number): Promise<CollectionEntry[]> {
   const { results } = await db
     .prepare(
-      `SELECT c.card_id AS cardId, k.name, k.rarity, k.tradable, c.quantity, c.reserved
+      `SELECT c.card_id AS cardId, k.name, k.rarity, k.tradable, k.image, c.quantity, c.reserved
        FROM collection c JOIN cards k ON k.id = c.card_id
        WHERE c.user_id = ?1 AND c.quantity > 0
        ORDER BY c.card_id`,
@@ -716,7 +717,7 @@ export interface OpeningHistoryEntry {
   id: number;
   createdAt: string;
   kind: BoosterKind;
-  cards: { id: number; name: string; rarity: Rarity }[];
+  cards: { id: number; name: string; rarity: Rarity; image: string | null }[];
 }
 
 /** Historique complet des ouvertures d'un joueur (pas seulement les tirages notables). */
@@ -735,7 +736,7 @@ export async function listMyOpenings(db: D1Database, userId: number, limit = 50)
     const cards = cardIds
       .map((id) => byId.get(id))
       .filter((c): c is CardRow => !!c)
-      .map((c) => ({ id: c.id, name: c.name, rarity: c.rarity }));
+      .map((c) => ({ id: c.id, name: c.name, rarity: c.rarity, image: c.image }));
     return { id: row.id, createdAt: row.createdAt, kind: row.kind, cards };
   });
 }
