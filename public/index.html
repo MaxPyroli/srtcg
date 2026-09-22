@@ -21,11 +21,14 @@
     /* Format final d'une carte (ratio ~2.5:3.5, comme une vraie carte à jouer) : ne change pas quand
        de vraies illustrations remplaceront "New art coming soon", seul le contenu de .art changera.
        --card-w sert aux grilles (collection, plusieurs cartes visibles) ; --reveal-w à l'ouverture
-       de booster, où une seule carte occupe la majorité de l'écran (comme TCG Pocket). */
+       de booster, où une seule carte occupe la majorité de l'écran (comme TCG Pocket) ; --summary-w
+       au récap des cartes déjà révélées pendant l'ouverture (3 par ligne). */
     --card-w: clamp(138px, 42vw, 190px);
     --card-h: calc(var(--card-w) * 1.4);
     --reveal-w: clamp(220px, 84vw, 320px);
     --reveal-h: calc(var(--reveal-w) * 1.4);
+    --summary-w: clamp(84px, 22vw, 108px);
+    --summary-h: calc(var(--summary-w) * 1.4);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--encre);
     background: var(--fond);
@@ -136,7 +139,13 @@
   .stack .flip.entering { animation: card-enter .4s ease backwards; }
 
   /* Les cartes révélées restent grandes une fois posées, comme à l'ouverture. */
-  #revealedRow .card { width: var(--reveal-w); height: var(--reveal-h); }
+  /* Récap des cartes déjà révélées : plus compact, 3 en haut puis 2 centrées en dessous. */
+  #revealedRow {
+    justify-content: center;
+    max-width: calc(var(--summary-w) * 3 + 28px);
+    margin: 0 auto;
+  }
+  #revealedRow .card { width: var(--summary-w); height: var(--summary-h); }
 
   @media (prefers-reduced-motion: reduce) {
     .flip-inner { transition: none; }
