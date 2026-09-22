@@ -69,7 +69,7 @@
   #collectionGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; }
   #collectionGrid .card { width: 100%; height: auto; aspect-ratio: 2.5 / 3.5; }
   #collectionGrid .qte { top: 4px; right: 4px; }
-  .card-empty { border: 2px dashed var(--trait); border-radius: 10px; aspect-ratio: 2.5 / 3.5; }
+  .card.card-missing { opacity: .4; }
   .card {
     position: relative; width: var(--card-w); height: var(--card-h);
     border: 3px solid var(--c); border-radius: 10px; text-align: left;
@@ -85,6 +85,10 @@
   .card .art-label {
     font-weight: 800; font-size: .8rem; line-height: 1.3; letter-spacing: .03em; text-transform: uppercase;
     color: rgba(255, 255, 255, .6); text-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  }
+  /* Dans la collection, on affiche juste le numéro au centre (la rareté se voit déjà à la couleur). */
+  .card .num {
+    font-weight: 800; font-size: 1.7rem; color: rgba(255, 255, 255, .85); text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
   }
   /* Le nom contient déjà la rareté et le numéro (ex. « Rare 07 ») : sert de sous-titre provisoire. */
   .card .nom {
@@ -216,6 +220,11 @@
 
   .filtres { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
   .filtres button[aria-pressed="true"] { background: var(--encre); color: #fff; border-color: var(--encre); }
+  .filtres button.r-commune, .filtres button.r-peu_commune, .filtres button.r-rare,
+  .filtres button.r-legendaire, .filtres button.r-secrete { border-color: var(--c); color: var(--c); }
+  .filtres button.r-commune[aria-pressed="true"], .filtres button.r-peu_commune[aria-pressed="true"],
+  .filtres button.r-rare[aria-pressed="true"], .filtres button.r-legendaire[aria-pressed="true"],
+  .filtres button.r-secrete[aria-pressed="true"] { background: var(--c); border-color: var(--c); color: #fff; }
   .filtres.emoji button { font-size: 1.15rem; line-height: 1; padding: 6px 9px; }
   .filtres.colors button { width: 30px; height: 30px; padding: 0; border-radius: 999px; border: 3px solid #fff; box-shadow: 0 0 0 1px var(--trait); }
   .filtres.colors button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--encre); }
@@ -592,15 +601,31 @@ async function guarded(button, action) {
 
 // --- Cartes ----------------------------------------------------------------
 
+/** Le nom contient déjà la rareté et le numéro (ex. « Rare 07 »), en attendant les vraies illustrations. */
+function cardNumber(name) {
+  const match = /\d+/.exec(name);
+  return match ? match[0] : '';
+}
+
 /** Carte plein cadre : le visuel (provisoirement "New art coming soon") remplit toute la carte,
- * le nom (qui contient déjà la rareté et le numéro, ex. « Rare 07 ») s'affiche en overlay en bas. */
-function cardView(card, { quantity, reserved } = {}) {
+ * le nom s'affiche en overlay en bas. Dans la collection (numberOnly), on affiche juste le numéro
+ * au centre : la couleur du cadre suffit à indiquer la rareté. */
+function cardView(card, { quantity, reserved, numberOnly } = {}) {
   return h('div', { class: `card r-${card.rarity}` },
     quantity > 1 ? h('span', { class: 'qte' }, `×${quantity}`) : null,
     reserved > 0 ? h('span', { class: 'res' }, `${reserved} bloquée${reserved > 1 ? 's' : ''}`) : null,
     h('div', { class: 'face' },
-      h('div', { class: 'art' }, h('span', { class: 'art-label' }, 'New art', h('br'), 'coming soon')),
-      h('span', { class: 'nom' }, card.name)));
+      h('div', { class: 'art' }, numberOnly
+        ? h('span', { class: 'num' }, cardNumber(card.name))
+        : h('span', { class: 'art-label' }, 'New art', h('br'), 'coming soon')),
+      numberOnly ? null : h('span', { class: 'nom' }, card.name)));
+}
+
+/** Emplacement d'une carte pas encore obtenue : cadre coloré par rareté, numéro au centre, atténué. */
+function emptyCardView(card) {
+  return h('div', { class: `card card-missing r-${card.rarity}`, 'aria-hidden': 'true' },
+    h('div', { class: 'face' },
+      h('div', { class: 'art' }, h('span', { class: 'num' }, cardNumber(card.name)))));
 }
 
 /** Une carte cliquable, pour la revoir en grand (récap d'ouverture, historique). */
@@ -963,7 +988,7 @@ function renderCollection() {
   const filters = $('#filters');
   filters.replaceChildren(...['all', ...RARITY_ORDER].map((key) =>
     h('button', {
-      type: 'button', class: 'secondary', 'aria-pressed': String(state.filter === key),
+      type: 'button', class: `secondary${key === 'all' ? '' : ' r-' + key}`, 'aria-pressed': String(state.filter === key),
       onclick: () => { state.filter = key; renderCollection(); },
     }, key === 'all' ? 'Toutes' : RARITIES[key])));
 
@@ -973,8 +998,8 @@ function renderCollection() {
   $('#collectionGrid').replaceChildren(...series.map((c) => {
     const entry = byCardId.get(c.id);
     return entry
-      ? cardButton({ id: c.id, name: c.name, rarity: c.rarity }, { quantity: entry.quantity, reserved: entry.reserved })
-      : h('div', { class: 'card-empty', 'aria-hidden': 'true' });
+      ? cardButton({ id: c.id, name: c.name, rarity: c.rarity }, { quantity: entry.quantity, reserved: entry.reserved, numberOnly: true })
+      : emptyCardView(c);
   }));
 }
 
