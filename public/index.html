@@ -169,6 +169,12 @@
   .card-modal[hidden] { display: none; }
   #cardModalContent .card { width: var(--reveal-w); height: var(--reveal-h); cursor: default; }
 
+  #tradeModalContent { cursor: default; max-width: 420px; width: 100%; text-align: center; margin-bottom: 0; }
+  #tradeModalContent h2 { text-align: left; }
+  .trade-cards { display: flex; justify-content: center; gap: 20px; margin-bottom: 14px; flex-wrap: wrap; }
+  .trade-cards > div { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .trade-cards .muted { margin: 0; font-weight: 600; }
+
   .historique { margin-bottom: 20px; }
   .historique .quand { margin-bottom: 8px; }
 
@@ -406,6 +412,17 @@
 
   <div id="cardModal" class="card-modal" hidden role="dialog" aria-modal="true" aria-label="Carte en grand">
     <div id="cardModalContent"></div>
+  </div>
+
+  <div id="tradeModal" class="card-modal" hidden role="dialog" aria-modal="true" aria-label="Détail de l'échange">
+    <div id="tradeModalContent" class="panel">
+      <h2 id="tradeModalTitle"></h2>
+      <div class="trade-cards">
+        <div id="tradeModalGive"></div>
+        <div id="tradeModalReceive"></div>
+      </div>
+      <p id="tradeModalActions" class="actions" style="justify-content:center"></p>
+    </div>
   </div>
 </main>
 
@@ -876,6 +893,7 @@ const STATUS = { pending: 'En attente', accepted: 'Acceptée', declined: 'Refus�
 async function conclude(id, action, message) {
   await api('POST', `/api/trades/${id}/${action}`);
   say(message);
+  $('#tradeModal').hidden = true;
   await refreshTrades();
 }
 
@@ -887,18 +905,35 @@ function renderTrades() {
     const text = mineOut
       ? `Tu proposes ${t.offeredName} à ${t.toName} contre ${t.requestedName}`
       : `${t.fromName} te propose ${t.offeredName} contre ${t.requestedName}`;
-    const buttons = [];
-    if (t.status === 'pending' && mineOut) {
-      buttons.push(h('button', { type: 'button', class: 'secondary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'cancel', 'Demande annulée.')) }, 'Annuler'));
-    }
-    if (t.status === 'pending' && !mineOut) {
-      buttons.push(
-        h('button', { type: 'button', class: 'primary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'accept', 'Échange accepté.')) }, 'Accepter'),
-        h('button', { type: 'button', class: 'secondary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'decline', 'Demande refusée.')) }, 'Refuser'));
-    }
-    return h('li', {}, h('span', {}, text, ' ', h('span', { class: 'pastille' }, STATUS[t.status])), h('span', { class: 'actions' }, buttons));
+    return h('li', {}, h('span', {}, text, ' ', h('span', { class: 'pastille' }, STATUS[t.status])),
+      h('span', { class: 'actions' }, h('button', { type: 'button', class: 'secondary', onclick: () => openTradeModal(t) }, "Voir l'échange")));
   }));
 }
+
+/** Détail d'une demande : les deux cartes, et seulement là qu'on peut accepter/refuser/annuler. */
+function openTradeModal(t) {
+  const mineOut = t.fromUserId === state.me.id;
+  const give = mineOut ? { name: t.offeredName, rarity: t.offeredRarity } : { name: t.requestedName, rarity: t.offeredRarity };
+  const receive = mineOut ? { name: t.requestedName, rarity: t.offeredRarity } : { name: t.offeredName, rarity: t.offeredRarity };
+  $('#tradeModalTitle').textContent = mineOut ? `Ta demande à ${t.toName}` : `Demande de ${t.fromName}`;
+  $('#tradeModalGive').replaceChildren(h('p', { class: 'muted' }, 'Tu donnes'), cardView(give));
+  $('#tradeModalReceive').replaceChildren(h('p', { class: 'muted' }, 'Tu reçois'), cardView(receive));
+
+  const actions = [];
+  if (t.status !== 'pending') {
+    actions.push(h('span', { class: 'pastille' }, STATUS[t.status]));
+  } else if (mineOut) {
+    actions.push(h('button', { type: 'button', class: 'secondary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'cancel', 'Demande annulée.')) }, 'Annuler la demande'));
+  } else {
+    actions.push(
+      h('button', { type: 'button', class: 'primary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'accept', 'Échange accepté.')) }, 'Accepter'),
+      h('button', { type: 'button', class: 'secondary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'decline', 'Demande refusée.')) }, 'Refuser'));
+  }
+  $('#tradeModalActions').replaceChildren(...actions);
+  $('#tradeModal').hidden = false;
+}
+
+$('#tradeModal').addEventListener('click', (event) => { if (event.target === event.currentTarget) $('#tradeModal').hidden = true; });
 
 // --- Profils -----------------------------------------------------------------
 
