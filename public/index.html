@@ -19,9 +19,13 @@
     --legendaire: #d69a12;
     --secrete: #8a45d1;
     /* Format final d'une carte (ratio ~2.5:3.5, comme une vraie carte à jouer) : ne change pas quand
-       de vraies illustrations remplaceront "New art coming soon", seul le contenu de .art changera. */
+       de vraies illustrations remplaceront "New art coming soon", seul le contenu de .art changera.
+       --card-w sert aux grilles (collection, plusieurs cartes visibles) ; --reveal-w à l'ouverture
+       de booster, où une seule carte occupe la majorité de l'écran (comme TCG Pocket). */
     --card-w: clamp(138px, 42vw, 190px);
     --card-h: calc(var(--card-w) * 1.4);
+    --reveal-w: clamp(220px, 84vw, 320px);
+    --reveal-h: calc(var(--reveal-w) * 1.4);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--encre);
     background: var(--fond);
@@ -58,24 +62,29 @@
   .cards { display: flex; flex-wrap: wrap; gap: 14px; }
   .cards[hidden] { display: none; }
   .card {
-    position: relative; width: var(--card-w); height: var(--card-h); padding: 8px;
-    background: #fff; border: 3px solid var(--c); border-radius: 10px;
-    display: flex; flex-direction: column; gap: 6px; text-align: left;
+    position: relative; width: var(--card-w); height: var(--card-h);
+    border: 3px solid var(--c); border-radius: 10px; text-align: left;
   }
   .card .art {
-    width: 100%; border-radius: 6px; flex: 1; min-height: 0; overflow: hidden;
+    position: absolute; inset: 0; border-radius: 7px; overflow: hidden;
     background: color-mix(in srgb, var(--c) 65%, #1b2430 15%);
-    display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px;
+    display: flex; align-items: center; justify-content: center; text-align: center; padding: 10%;
   }
   .card .art-label {
-    font-weight: 800; font-size: .7rem; line-height: 1.3; letter-spacing: .03em; text-transform: uppercase;
-    color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+    font-weight: 800; font-size: .8rem; line-height: 1.3; letter-spacing: .03em; text-transform: uppercase;
+    color: rgba(255, 255, 255, .6); text-shadow: 0 1px 2px rgba(0, 0, 0, .3);
   }
-  .card .texte { display: flex; flex-direction: column; justify-content: space-between; flex: none; }
-  .card .nom { font-weight: 600; }
-  .card .rar { font-size: .85rem; color: var(--c); font-weight: 600; }
-  .card .qte { position: absolute; top: -10px; right: -10px; background: var(--encre); color: #fff; border-radius: 999px; min-width: 28px; padding: 1px 8px; font-size: .85rem; text-align: center; }
-  .card .res { font-size: .8rem; color: var(--discret); }
+  /* Le nom contient déjà la rareté et le numéro (ex. « Rare 07 ») : sert de sous-titre provisoire. */
+  .card .nom {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 10% 8%;
+    background: linear-gradient(to top, rgba(0, 0, 0, .6), transparent);
+    color: #fff; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+  }
+  .card .qte { position: absolute; top: -10px; right: -10px; background: var(--encre); color: #fff; border-radius: 999px; min-width: 28px; padding: 1px 8px; font-size: .85rem; text-align: center; z-index: 1; }
+  .card .res {
+    position: absolute; left: 8px; top: 8px; background: rgba(0, 0, 0, .55); color: #fff;
+    font-size: .7rem; padding: 2px 9px; border-radius: 999px; z-index: 1;
+  }
   .r-commune { --c: var(--commune); }
   .r-peu_commune { --c: var(--peu_commune); }
   .r-rare { --c: var(--rare); box-shadow: 0 0 10px var(--c); }
@@ -96,7 +105,7 @@
   .pack { display: flex; justify-content: center; margin: 6px 0 18px; }
   .pack[hidden] { display: none; }
   .pack-btn {
-    width: var(--card-w); height: var(--card-h); padding: 0; border: 3px solid #1b2430; border-radius: 10px;
+    width: var(--reveal-w); height: var(--reveal-h); padding: 0; border: 3px solid #1b2430; border-radius: 10px;
     background: repeating-linear-gradient(45deg, #26303d, #26303d 8px, #2e3a49 8px, #2e3a49 16px);
     color: #fff; font-weight: 600; font-size: .82rem;
   }
@@ -111,7 +120,7 @@
   @keyframes pack-burst { to { transform: scale(1.3); opacity: 0; } }
 
   /* Pile de cartes révélées une par une */
-  .stack { position: relative; width: var(--card-w); height: var(--card-h); margin: 6px auto 18px; }
+  .stack { position: relative; width: var(--reveal-w); height: var(--reveal-h); margin: 6px auto 18px; }
   .stack .flip { position: absolute; inset: 0; transition: transform .25s ease, opacity .4s ease; }
   .stack .flip.flyout { transform: translate(220%, -40%) rotate(18deg) !important; opacity: 0; }
   .stack .flip.flash .flip-front .card { animation: card-flash .7s ease; }
@@ -408,15 +417,14 @@ async function guarded(button, action) {
 
 // --- Cartes ----------------------------------------------------------------
 
+/** Carte plein cadre : le visuel (provisoirement "New art coming soon") remplit toute la carte,
+ * le nom (qui contient déjà la rareté et le numéro, ex. « Rare 07 ») s'affiche en overlay en bas. */
 function cardView(card, { quantity, reserved } = {}) {
   return h('div', { class: `card r-${card.rarity}` },
     quantity > 1 ? h('span', { class: 'qte' }, `×${quantity}`) : null,
+    reserved > 0 ? h('span', { class: 'res' }, `${reserved} bloquée${reserved > 1 ? 's' : ''}`) : null,
     h('div', { class: 'art' }, h('span', { class: 'art-label' }, 'New art', h('br'), 'coming soon')),
-    h('div', { class: 'texte' },
-      h('span', { class: 'nom' }, card.name),
-      h('span', {},
-        h('span', { class: 'rar' }, RARITIES[card.rarity]),
-        reserved > 0 ? h('div', { class: 'res' }, `${reserved} bloquée${reserved > 1 ? 's' : ''} par un échange`) : null)));
+    h('span', { class: 'nom' }, card.name));
 }
 
 // --- Connexion -------------------------------------------------------------
