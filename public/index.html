@@ -194,6 +194,17 @@
   .trade-cards > div { display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .trade-cards .muted { margin: 0; font-weight: 600; }
 
+  #welcomeContent { cursor: default; max-width: 380px; width: 100%; text-align: center; margin-bottom: 0; }
+
+  /* Accueil */
+  .landing-logo { display: flex; justify-content: center; margin-bottom: 8px; }
+  .landing-logo img { width: 120px; height: 120px; object-fit: contain; }
+  #landing h2 { text-align: center; }
+  #landing .muted { text-align: center; max-width: 46ch; margin-left: auto; margin-right: auto; }
+  .landing-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 18px; }
+  .landing-actions button { width: 100%; max-width: 280px; }
+  #login button.link, #codeGate button.link, #createForm button.link { margin-bottom: 10px; }
+
   .historique { margin-bottom: 20px; }
   .historique .quand { margin-bottom: 8px; }
 
@@ -241,11 +252,21 @@
 </header>
 
 <main>
+  <section id="landing" class="panel" hidden>
+    <div class="landing-logo"><img src="/img/logo.png" alt="SRTV" width="120" height="120"></div>
+    <h2>TCG de la communauté SRTV</h2>
+    <p class="muted">Boosters, échanges, collection — accès réservé pour l'instant aux personnes invitées.
+      La connexion Twitch remplacera cet écran plus tard.</p>
+    <p class="landing-actions">
+      <button id="goLoginBtn" class="primary" type="button">Se connecter</button>
+      <button id="goCreateBtn" class="secondary" type="button">J'ai un code d'invitation</button>
+    </p>
+  </section>
+
   <section id="login" class="panel" hidden>
+    <button class="link" type="button" data-back>← Retour</button>
     <h2>Connexion</h2>
-    <p class="muted">Accès réservé pour l'instant aux personnes invitées ; la connexion Twitch remplacera ce
-      formulaire plus tard. Choisis un pseudo : la première fois, le mot de passe que tu tapes devient le
-      tien, à retaper ensuite à chaque connexion.</p>
+    <p class="muted">Ton pseudo et le mot de passe que tu as choisi à ta première connexion.</p>
     <form id="loginForm">
       <label>Pseudo
         <input id="loginName" required minlength="2" maxlength="24" autocomplete="off">
@@ -253,12 +274,38 @@
       <label>Mot de passe
         <input id="loginPw" type="password" required minlength="4" autocomplete="off">
       </label>
-      <label id="inviteRow" hidden>Code d'invitation (pour créer ton compte la première fois)
-        <input id="loginInvite" autocomplete="off">
-      </label>
       <button class="primary" type="submit">Se connecter</button>
     </form>
     <p id="loginError" class="error" role="alert"></p>
+  </section>
+
+  <section id="codeGate" class="panel" hidden>
+    <button class="link" type="button" data-back>← Retour</button>
+    <h2>Code d'invitation</h2>
+    <p class="muted">Demande-le à la personne qui t'a invité.</p>
+    <form id="codeGateForm">
+      <label>Code
+        <input id="gateCode" required autocomplete="off">
+      </label>
+      <button class="primary" type="submit">Continuer</button>
+    </form>
+    <p id="codeGateError" class="error" role="alert"></p>
+  </section>
+
+  <section id="createForm" class="panel" hidden>
+    <button class="link" type="button" data-back>← Retour</button>
+    <h2>Créer ton compte</h2>
+    <p class="muted">Choisis un pseudo et un mot de passe : ce sont les tiens, à retaper à chaque connexion.</p>
+    <form id="createAccountForm">
+      <label>Pseudo
+        <input id="createName" required minlength="2" maxlength="24" autocomplete="off">
+      </label>
+      <label>Mot de passe
+        <input id="createPw" type="password" required minlength="4" autocomplete="off">
+      </label>
+      <button class="primary" type="submit">Créer mon compte</button>
+    </form>
+    <p id="createError" class="error" role="alert"></p>
   </section>
 
   <section id="game" hidden>
@@ -466,6 +513,15 @@
       <p id="tradeModalActions" class="actions" style="justify-content:center"></p>
     </div>
   </div>
+
+  <div id="welcomeModal" class="card-modal" hidden role="dialog" aria-modal="true" aria-label="Bienvenue">
+    <div id="welcomeContent" class="panel">
+      <h2>Bienvenue, <span id="welcomeName"></span> !</h2>
+      <p>Ouvre des boosters pour découvrir des cartes, échange-les avec les autres joueurs, et complète ta
+        collection au fil du temps.</p>
+      <p style="text-align:center"><button id="welcomeCloseBtn" class="primary" type="button">C'est parti</button></p>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -592,11 +648,43 @@ function renderPile() {
 async function enterGame(me) {
   state.me = me;
   state.catalog = await api('GET', '/api/cards');
-  $('#login').hidden = true;
+  for (const id of ['landing', 'login', 'codeGate', 'createForm']) $(`#${id}`).hidden = true;
   $('#game').hidden = false;
   renderWho();
   showTab('booster');
 }
+
+function openWelcome(me) {
+  $('#welcomeName').textContent = me.displayName;
+  $('#welcomeModal').hidden = false;
+}
+
+$('#welcomeCloseBtn').addEventListener('click', () => { $('#welcomeModal').hidden = true; });
+
+// --- Accueil : connexion ou création de compte -----------------------------
+
+let inviteRequired = false;
+let pendingInviteCode = '';
+
+function showAuthView(name) {
+  for (const id of ['landing', 'login', 'codeGate', 'createForm']) $(`#${id}`).hidden = id !== name;
+}
+
+document.querySelectorAll('[data-back]').forEach((btn) => btn.addEventListener('click', () => showAuthView('landing')));
+
+async function initLanding() {
+  try {
+    inviteRequired = (await api('GET', '/api/invite-required')).required;
+  } catch { inviteRequired = false; }
+  $('#goCreateBtn').textContent = inviteRequired ? "J'ai un code d'invitation" : 'Créer un compte';
+  showAuthView('landing');
+}
+
+$('#goLoginBtn').addEventListener('click', () => showAuthView('login'));
+$('#goCreateBtn').addEventListener('click', () => {
+  pendingInviteCode = '';
+  showAuthView(inviteRequired ? 'codeGate' : 'createForm');
+});
 
 $('#loginForm').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -607,14 +695,51 @@ $('#loginForm').addEventListener('submit', async (event) => {
     const me = await api('POST', '/api/dev/login', {
       name: $('#loginName').value.trim(),
       password: $('#loginPw').value || undefined,
-      inviteCode: $('#loginInvite').value || undefined,
     });
     await enterGame(me);
   } catch (error) {
-    if (error.code === 'invite_required') $('#inviteRow').hidden = false;
     $('#loginError').textContent = error.status === 404
       ? 'La connexion est désactivée sur ce serveur.'
-      : error.message;
+      : error.code === 'invite_required'
+        ? "Pseudo introuvable. Si tu n'as pas encore de compte, reviens à l'accueil pour en créer un."
+        : error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#codeGateForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('#codeGateError').textContent = '';
+  const button = event.submitter || $('#codeGateForm button');
+  button.disabled = true;
+  try {
+    const code = $('#gateCode').value.trim();
+    await api('POST', '/api/invite-code/check', { code });
+    pendingInviteCode = code;
+    showAuthView('createForm');
+  } catch (error) {
+    $('#codeGateError').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#createAccountForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('#createError').textContent = '';
+  const button = event.submitter || $('#createAccountForm button');
+  button.disabled = true;
+  try {
+    const me = await api('POST', '/api/dev/login', {
+      name: $('#createName').value.trim(),
+      password: $('#createPw').value || undefined,
+      inviteCode: pendingInviteCode || undefined,
+    });
+    await enterGame(me);
+    if (me.isNew) openWelcome(me);
+  } catch (error) {
+    $('#createError').textContent = error.message;
   } finally {
     button.disabled = false;
   }
@@ -1267,11 +1392,7 @@ function renderAdminOpenings(openings) {
   try {
     await enterGame(await api('GET', '/api/me'));
   } catch {
-    try {
-      const { required } = await api('GET', '/api/invite-required');
-      $('#inviteRow').hidden = !required;
-    } catch { /* si ça échoue, tant pis : le champ reste caché, le serveur tranchera au besoin */ }
-    $('#login').hidden = false;
+    await initLanding();
   }
 })();
 </script>

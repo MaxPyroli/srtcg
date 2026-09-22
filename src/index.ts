@@ -137,14 +137,14 @@ app.post('/api/dev/login', async (c) => {
     throw new GameError('bad_name', 400, 'Le pseudo doit faire 2 à 24 caractères (lettres, chiffres, espace, - ou _).');
   }
   const admins = (c.env.DEV_ADMINS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  const user = await devLogin(c.env.DB, {
+  const { user, isNew } = await devLogin(c.env.DB, {
     name,
     isAdmin: admins.includes(name.toLowerCase()),
     password: typeof body.password === 'string' ? body.password : undefined,
     inviteCode: typeof body.inviteCode === 'string' ? body.inviteCode : undefined,
   });
   await startSession(c, user);
-  return c.json(publicUser(user));
+  return c.json({ ...publicUser(user), isNew });
 });
 
 app.post('/api/logout', (c) => {
@@ -167,6 +167,17 @@ app.get('/api/invite-required', async (c) => {
   if (c.env.DEV_AUTH !== '1') return c.json({ required: false });
   const code = await getSetting(c.env.DB, INVITE_CODE_KEY);
   return c.json({ required: code != null });
+});
+
+/** Vérifie un code d'invitation sans rien créer (étape « j'ai un code » avant le formulaire de création). */
+app.post('/api/invite-code/check', async (c) => {
+  if (c.env.DEV_AUTH !== '1') return c.json({ error: 'not_found', message: 'Introuvable.' }, 404);
+  const body = await readJson(c);
+  const submitted = typeof body.code === 'string' ? body.code.trim() : '';
+  const required = await getSetting(c.env.DB, INVITE_CODE_KEY);
+  const valid = !required || submitted === required;
+  if (!valid) throw new GameError('invite_required', 401, "Code d'invitation incorrect.");
+  return c.json({ valid: true });
 });
 
 // ---------------------------------------------------------------------------

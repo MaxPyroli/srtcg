@@ -184,6 +184,27 @@ describe('code d\'invitation', () => {
     expect((await call('GET', '/api/invite-required')).json).toEqual({ required: false });
     expect((await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepasse1' } })).status).toBe(200);
   });
+
+  it('vérifie un code sans créer de compte', async () => {
+    const chef = await login('chef');
+    await call('POST', '/api/admin/invite-code', { cookie: chef.cookie, body: { code: 'BIENVENUE' } });
+
+    const bad = await call('POST', '/api/invite-code/check', { body: { code: 'FAUX' } });
+    expect(bad.status).toBe(401);
+
+    const good = await call('POST', '/api/invite-code/check', { body: { code: 'BIENVENUE' } });
+    expect(good.status).toBe(200);
+    expect(good.json.valid).toBe(true);
+    // Rien n'a été créé : le pseudo n'est toujours pas pris.
+    expect(Number(db.one("SELECT COUNT(*) AS n FROM users WHERE twitch_id LIKE 'dev:%' AND twitch_id NOT IN ('dev:chef')")?.n)).toBe(0);
+  });
+
+  it('signale un nouveau compte (isNew), pas une reconnexion', async () => {
+    const created = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepasse1' } });
+    expect(created.json.isNew).toBe(true);
+    const again = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'motdepasse1' } });
+    expect(again.json.isNew).toBe(false);
+  });
 });
 
 describe('administration', () => {

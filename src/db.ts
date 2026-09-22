@@ -138,7 +138,7 @@ export const INVITE_CODE_KEY = 'invite_code';
 export async function devLogin(
   db: D1Database,
   input: { name: string; isAdmin: boolean; password: string | undefined; inviteCode: string | undefined },
-): Promise<UserRow> {
+): Promise<{ user: UserRow; isNew: boolean }> {
   const twitchId = `dev:${input.name.toLowerCase()}`;
   const existing = await db
     .prepare('SELECT id, twitch_id, display_name, is_admin, boosters, password_hash, password_salt FROM users WHERE twitch_id = ?1')
@@ -181,7 +181,7 @@ export async function devLogin(
     .bind(twitchId)
     .first<UserRow>();
   if (!user) throw new Error('Connexion impossible');
-  return user;
+  return { user, isNew: !existing };
 }
 
 /** Admin : définit (ou retire, si null) le code d'invitation requis pour créer un compte. */
