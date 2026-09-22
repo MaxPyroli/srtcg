@@ -121,7 +121,7 @@
 
   /* Pile de cartes révélées une par une */
   .stack { position: relative; width: var(--reveal-w); height: var(--reveal-h); margin: 6px auto 18px; }
-  .stack .flip { position: absolute; inset: 0; transition: transform .25s ease, opacity .4s ease; }
+  .stack .flip { position: absolute; inset: 0; width: 100%; height: 100%; transition: transform .25s ease, opacity .4s ease; }
   .stack .flip.flyout { transform: translate(220%, -40%) rotate(18deg) !important; opacity: 0; }
   .stack .flip.flash .flip-front .card { animation: card-flash .7s ease; }
   .stack .flip:nth-child(1) { z-index: 5; transform: translate(0, 0) rotate(0deg); }
