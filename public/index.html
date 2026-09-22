@@ -131,9 +131,16 @@
   .stack .flip:nth-child(5) { z-index: 1; transform: translate(16px, 24px) rotate(-8deg); }
   @keyframes card-flash { 0%, 100% { box-shadow: 0 0 16px var(--c); } 40% { box-shadow: 0 0 46px var(--c); } }
 
+  /* Les cartes sortent en éventail de derrière le paquet à l'ouverture. */
+  @keyframes card-enter { from { transform: translateY(26px) scale(.8); opacity: 0; } }
+  .stack .flip.entering { animation: card-enter .4s ease backwards; }
+
+  /* Les cartes révélées restent grandes une fois posées, comme à l'ouverture. */
+  #revealedRow .card { width: var(--reveal-w); height: var(--reveal-h); }
+
   @media (prefers-reduced-motion: reduce) {
     .flip-inner { transition: none; }
-    .pack.shake .pack-btn, .pack.burst .pack-btn, .stack .flip.flash .flip-front .card { animation: none; }
+    .pack.shake .pack-btn, .pack.burst .pack-btn, .stack .flip.flash .flip-front .card, .stack .flip.entering { animation: none; }
     .stack .flip { transition: none; }
   }
 
@@ -605,10 +612,11 @@ function beginStack(opened) {
     }, revealDelay(700));
   };
 
-  const buttons = opened.cards.map((card) => {
+  const buttons = opened.cards.map((card, i) => {
     const button = h('button', {
       type: 'button',
-      class: 'flip',
+      class: 'flip entering',
+      style: `animation-delay: ${revealDelay(i * 70)}ms`,
       'aria-label': 'Révéler la carte',
       onclick: () => {
         if (autoPlaying || button !== buttons[revealed]) return;
