@@ -66,10 +66,12 @@
   .cards[hidden] { display: none; }
 
   /* Collection : toute la série en grille de 5, avec un emplacement vide pour ce qui manque. */
-  #collectionGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; }
+  #collectionGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
   #collectionGrid .card { width: 100%; height: auto; aspect-ratio: 2.5 / 3.5; }
   #collectionGrid .qte { top: 4px; right: 4px; }
-  .card.card-missing { opacity: .4; }
+  .card.card-missing { border-style: dashed; }
+  .card.card-missing .art { background: transparent; }
+  .card.card-missing .num { color: var(--trait); text-shadow: none; }
   .card {
     position: relative; width: var(--card-w); height: var(--card-h);
     border: 3px solid var(--c); border-radius: 10px; text-align: left;
