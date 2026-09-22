@@ -670,3 +670,31 @@ export async function listNotableOpenings(db: D1Database, limit = 30): Promise<N
   }
   return notable;
 }
+
+export interface OpeningHistoryEntry {
+  id: number;
+  createdAt: string;
+  kind: BoosterKind;
+  cards: { id: number; name: string; rarity: Rarity }[];
+}
+
+/** Historique complet des ouvertures d'un joueur (pas seulement les tirages notables). */
+export async function listMyOpenings(db: D1Database, userId: number, limit = 50): Promise<OpeningHistoryEntry[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, opened_at AS createdAt, kind, card_ids AS cardIds
+       FROM openings WHERE user_id = ?1 ORDER BY id DESC LIMIT ?2`,
+    )
+    .bind(userId, limit)
+    .all<{ id: number; createdAt: string; kind: BoosterKind; cardIds: string }>();
+
+  const { byId } = await getCatalog(db);
+  return results.map((row) => {
+    const cardIds: number[] = JSON.parse(row.cardIds);
+    const cards = cardIds
+      .map((id) => byId.get(id))
+      .filter((c): c is CardRow => !!c)
+      .map((c) => ({ id: c.id, name: c.name, rarity: c.rarity }));
+    return { id: row.id, createdAt: row.createdAt, kind: row.kind, cards };
+  });
+}

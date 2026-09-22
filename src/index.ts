@@ -26,6 +26,7 @@ import {
   listAdminLog,
   listAllTrades,
   listNotableOpenings,
+  listMyOpenings,
   getProfile,
   updateProfile,
 } from './db.ts';
@@ -216,6 +217,8 @@ app.post('/api/boosters/open', async (c) => {
     cards: opened.cards.map((k) => ({ id: k.id, name: k.name, rarity: k.rarity })),
   });
 });
+
+app.get('/api/boosters/openings', async (c) => c.json(await listMyOpenings(c.env.DB, c.get('user').id)));
 
 // --- Échanges -------------------------------------------------------------
 

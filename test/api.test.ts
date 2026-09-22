@@ -471,6 +471,22 @@ describe('ouverture de boosters', () => {
     expect(Number(db.one('SELECT SUM(quantity) AS n FROM collection WHERE user_id = ?', chef.id)?.n)).toBe(15);
     expect(Number(db.one('SELECT boosters AS n FROM users WHERE id = ?', chef.id)?.n)).toBe(0);
   });
+
+  it('liste l\'historique de ses propres ouvertures, plus récentes d\'abord', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: chef.id, amount: 2 } });
+    await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: alice.id, amount: 1 } });
+    const first = await call('POST', '/api/boosters/open', { cookie: chef.cookie });
+    const second = await call('POST', '/api/boosters/open', { cookie: chef.cookie });
+    await call('POST', '/api/boosters/open', { cookie: alice.cookie });
+
+    const res = await call('GET', '/api/boosters/openings', { cookie: chef.cookie });
+    expect(res.status).toBe(200);
+    expect(res.json).toHaveLength(2);
+    expect(res.json[0].cards).toEqual(second.json.cards);
+    expect(res.json[1].cards).toEqual(first.json.cards);
+  });
 });
 
 describe('échanges', () => {

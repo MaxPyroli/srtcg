@@ -138,14 +138,27 @@
   @keyframes card-enter { from { transform: translateY(26px) scale(.8); opacity: 0; } }
   .stack .flip.entering { animation: card-enter .4s ease backwards; }
 
-  /* Les cartes révélées restent grandes une fois posées, comme à l'ouverture. */
-  /* Récap des cartes déjà révélées : plus compact, 3 en haut puis 2 centrées en dessous. */
-  #revealedRow {
+  /* Cartes en petit format : récap d'ouverture, historique. 3 par ligne, centré (donc 3 puis 2 pour un booster). */
+  .cards.compact {
     justify-content: center;
     max-width: calc(var(--summary-w) * 3 + 28px);
     margin: 0 auto;
   }
-  #revealedRow .card { width: var(--summary-w); height: var(--summary-h); }
+  .cards.compact .card { width: var(--summary-w); height: var(--summary-h); }
+
+  /* Une carte cliquable (récap, historique) pour la revoir en grand. */
+  .card-btn { all: unset; cursor: pointer; border-radius: 10px; }
+  .card-btn:focus-visible { outline: 3px solid #f2a900; outline-offset: 2px; }
+
+  .card-modal {
+    position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .65);
+    display: flex; align-items: center; justify-content: center; padding: 24px; cursor: pointer;
+  }
+  .card-modal[hidden] { display: none; }
+  #cardModalContent .card { width: var(--reveal-w); height: var(--reveal-h); cursor: default; }
+
+  .historique { margin-bottom: 20px; }
+  .historique .quand { margin-bottom: 8px; }
 
   @media (prefers-reduced-motion: reduce) {
     .flip-inner { transition: none; }
@@ -225,7 +238,7 @@
         <button id="packBtn" class="pack-btn" type="button">Toucher pour ouvrir</button>
       </div>
       <div id="stack" class="stack" hidden aria-live="polite"></div>
-      <div id="revealedRow" class="cards" hidden></div>
+      <div id="revealedRow" class="cards compact" hidden></div>
       <p id="announce" class="annonce" role="status"></p>
 
       <h2 style="margin-top:28px">Tu as un code ?</h2>
@@ -235,6 +248,9 @@
         </label>
         <button class="secondary" type="submit">Utiliser le code</button>
       </form>
+
+      <h2 style="margin-top:28px">Historique de mes ouvertures</h2>
+      <div id="openingHistory"></div>
     </div>
 
     <div id="tab-collection" class="panel" hidden>
@@ -363,6 +379,10 @@
   </section>
 
   <p id="toast" class="toast" role="status"></p>
+
+  <div id="cardModal" class="card-modal" hidden role="dialog" aria-modal="true" aria-label="Carte en grand">
+    <div id="cardModalContent"></div>
+  </div>
 </main>
 
 <script>
@@ -443,6 +463,24 @@ function cardView(card, { quantity, reserved } = {}) {
     h('span', { class: 'nom' }, card.name));
 }
 
+/** Une carte cliquable, pour la revoir en grand (récap d'ouverture, historique). */
+function cardButton(card) {
+  return h('button', {
+    type: 'button', class: 'card-btn', 'aria-label': `Voir ${card.name} en grand`,
+    onclick: () => openCardModal(card),
+  }, cardView(card));
+}
+
+function openCardModal(card) {
+  $('#cardModalContent').replaceChildren(cardView(card));
+  $('#cardModal').hidden = false;
+}
+
+$('#cardModal').addEventListener('click', () => { $('#cardModal').hidden = true; });
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') $('#cardModal').hidden = true;
+});
+
 // --- Connexion -------------------------------------------------------------
 
 function renderWho() {
@@ -508,7 +546,7 @@ function showTab(name) {
     button.setAttribute('aria-selected', String(button.dataset.tab === name));
   }
   for (const id of ['booster', 'collection', 'trades', 'profiles', 'admin']) $(`#tab-${id}`).hidden = id !== name;
-  if (name === 'booster') refreshMe();
+  if (name === 'booster') { refreshMe(); refreshOpeningHistory(); }
   if (name === 'collection') refreshCollection();
   if (name === 'trades') refreshTrades();
   if (name === 'profiles') refreshProfilesTab();
@@ -651,10 +689,26 @@ function showFinalRow(opened) {
   $('#revealAll').hidden = true;
   $('#openBtn').hidden = false;
   const row = $('#revealedRow');
-  row.replaceChildren(...opened.cards.map((c) => cardView(c)));
+  row.replaceChildren(...opened.cards.map((c) => cardButton(c)));
   row.hidden = false;
   if (opened.kind === 'god') $('#announce').textContent = 'God Pack !';
   if (opened.kind === 'secret') $('#announce').textContent = 'Carte secrète !';
+  refreshOpeningHistory().catch(() => { /* l'historique se rechargera au prochain passage sur l'onglet */ });
+}
+
+// --- Historique des ouvertures -----------------------------------------------
+
+async function refreshOpeningHistory() {
+  renderOpeningHistory(await api('GET', '/api/boosters/openings'));
+}
+
+function renderOpeningHistory(history) {
+  $('#openingHistory').replaceChildren(...(history.length ? history.map((o) => h('div', { class: 'historique' },
+    h('p', { class: 'muted quand' },
+      fmtDate(o.createdAt),
+      o.kind === 'god' ? ' — God Pack' : o.kind === 'secret' ? ' — Carte secrète' : ''),
+    h('div', { class: 'cards compact' }, ...o.cards.map((c) => cardButton(c))))
+  ) : [h('p', { class: 'muted' }, 'Aucune ouverture pour le moment.')]));
 }
 
 $('#codeForm').addEventListener('submit', (event) => {
