@@ -73,8 +73,11 @@
     position: relative; width: var(--card-w); height: var(--card-h);
     border: 3px solid var(--c); border-radius: 10px; text-align: left;
   }
+  /* .face regroupe l'illustration et le nom, et coupe tout ce qui dépasse à angles arrondis :
+     séparé de .card (qui elle n'est pas coupée, pour laisser dépasser le badge de quantité). */
+  .card .face { position: absolute; inset: 0; border-radius: 7px; overflow: hidden; }
   .card .art {
-    position: absolute; inset: 0; border-radius: 7px; overflow: hidden;
+    position: absolute; inset: 0;
     background: color-mix(in srgb, var(--c) 65%, #1b2430 15%);
     display: flex; align-items: center; justify-content: center; text-align: center; padding: 10%;
   }
@@ -500,8 +503,9 @@ function cardView(card, { quantity, reserved } = {}) {
   return h('div', { class: `card r-${card.rarity}` },
     quantity > 1 ? h('span', { class: 'qte' }, `×${quantity}`) : null,
     reserved > 0 ? h('span', { class: 'res' }, `${reserved} bloquée${reserved > 1 ? 's' : ''}`) : null,
-    h('div', { class: 'art' }, h('span', { class: 'art-label' }, 'New art', h('br'), 'coming soon')),
-    h('span', { class: 'nom' }, card.name));
+    h('div', { class: 'face' },
+      h('div', { class: 'art' }, h('span', { class: 'art-label' }, 'New art', h('br'), 'coming soon')),
+      h('span', { class: 'nom' }, card.name)));
 }
 
 /** Une carte cliquable, pour la revoir en grand (récap d'ouverture, historique). */
