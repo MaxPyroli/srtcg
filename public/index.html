@@ -150,6 +150,13 @@
   .card-btn { all: unset; cursor: pointer; border-radius: 10px; }
   .card-btn:focus-visible { outline: 3px solid #f2a900; outline-offset: 2px; }
 
+  /* Une carte cliquable pour la choisir (échange) : anneau d'accent quand sélectionnée. */
+  .card-pick { all: unset; cursor: pointer; border-radius: 10px; opacity: .82; transition: opacity .15s, transform .15s; }
+  .card-pick:hover { opacity: 1; }
+  .card-pick:focus-visible { outline: 3px solid #f2a900; outline-offset: 2px; }
+  .card-pick.picked { opacity: 1; transform: translateY(-3px); }
+  .card-pick.picked .card { outline: 3px solid var(--accent); outline-offset: 2px; }
+
   .card-modal {
     position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .65);
     display: flex; align-items: center; justify-content: center; padding: 24px; cursor: pointer;
@@ -263,16 +270,28 @@
     <div id="tab-trades" class="panel" hidden>
       <h2>Proposer un échange</h2>
       <p class="muted">Un échange se fait entre deux cartes de même rareté. La carte que tu offres est bloquée jusqu'à la réponse.</p>
-      <label>Avec quel joueur ?
-        <select id="tradeWith"></select>
+
+      <label>Chercher un joueur
+        <input id="tradeSearch" type="text" autocomplete="off" placeholder="Pseudo...">
       </label>
-      <label>Carte que tu veux
-        <select id="wantCard"></select>
-      </label>
-      <label>Carte que tu offres
-        <select id="giveCard"></select>
-      </label>
-      <button id="proposeBtn" class="primary" type="button">Proposer l'échange</button>
+      <ul id="playerResults" class="liste"></ul>
+      <p id="tradePartnerRow" class="muted" hidden>
+        Échange avec <strong id="tradePartnerName"></strong>
+        <button id="tradeChangePartner" class="link" type="button">changer</button>
+      </p>
+
+      <div id="tradeStep2" hidden>
+        <h2 style="margin-top:20px">Carte que tu veux</h2>
+        <div id="theirCardsGrid" class="cards"></div>
+      </div>
+
+      <div id="tradeStep3" hidden>
+        <h2 style="margin-top:20px">Carte que tu offres</h2>
+        <div id="myCardsGrid" class="cards"></div>
+      </div>
+
+      <p><button id="proposeBtn" class="primary" type="button" hidden>Proposer l'échange</button></p>
+
       <h2 style="margin-top:28px">Mes demandes</h2>
       <ul id="tradeList" class="liste"></ul>
     </div>
@@ -399,7 +418,7 @@ const RARITIES = {
 };
 const RARITY_ORDER = Object.keys(RARITIES);
 
-const state = { me: null, catalog: [], collection: [], filter: 'all', players: [], trades: [], theirCards: [] };
+const state = { me: null, catalog: [], collection: [], filter: 'all', players: [], trades: [] };
 
 /** Crée un élément sans jamais interpréter de HTML : les pseudos des joueurs restent du texte. */
 function h(tag, attrs = {}, ...children) {
@@ -760,42 +779,83 @@ async function refreshPlayers() {
 async function refreshTrades() {
   await refreshPlayers();
   [state.collection, state.trades] = await Promise.all([api('GET', '/api/collection'), api('GET', '/api/trades')]);
-  const others = state.players.filter((p) => p.id !== state.me.id);
-  const select = $('#tradeWith');
-  select.replaceChildren(h('option', { value: '' }, others.length ? 'Choisir un joueur' : "Aucun autre joueur pour l'instant"),
-    ...others.map((p) => h('option', { value: p.id }, `${p.displayName} (${p.distinctCards} cartes)`)));
-  await loadTheirCards();
+  resetTradeFlow();
   renderTrades();
 }
 
-async function loadTheirCards() {
-  const id = Number($('#tradeWith').value);
-  state.theirCards = id ? (await api('GET', `/api/users/${id}/collection`)).cards.filter((c) => c.tradable) : [];
-  const want = $('#wantCard');
-  want.replaceChildren(h('option', { value: '' }, id ? 'Choisir une carte' : '—'),
-    ...state.theirCards.map((c) => h('option', { value: c.cardId }, `${c.name} (${RARITIES[c.rarity]})`)));
-  renderGiveOptions();
+const tradeState = { partner: null, want: null, give: null, theirCards: [] };
+
+function resetTradeFlow() {
+  tradeState.partner = null;
+  tradeState.want = null;
+  tradeState.give = null;
+  tradeState.theirCards = [];
+  $('#tradeSearch').value = '';
+  $('#tradePartnerRow').hidden = true;
+  $('#tradeStep2').hidden = true;
+  $('#tradeStep3').hidden = true;
+  $('#proposeBtn').hidden = true;
+  renderPlayerResults('');
 }
 
-function renderGiveOptions() {
-  const wanted = state.theirCards.find((c) => c.cardId === Number($('#wantCard').value));
+function renderPlayerResults(query) {
+  const q = query.trim().toLowerCase();
+  const results = q ? state.players.filter((p) => p.id !== state.me.id && p.displayName.toLowerCase().includes(q)).slice(0, 8) : [];
+  $('#playerResults').replaceChildren(...(results.length ? results.map((p) => h('li', {},
+    h('span', { class: 'player-row' }, avatarView(p.avatarEmoji, p.avatarColor),
+      h('span', {}, p.displayName, ' ', h('span', { class: 'muted' }, `— ${p.distinctCards} carte${p.distinctCards > 1 ? 's' : ''}`))),
+    h('span', { class: 'actions' }, h('button', { type: 'button', class: 'secondary', onclick: () => selectTradePartner(p) }, 'Choisir')))
+  ) : q ? [h('li', { class: 'muted' }, 'Aucun joueur trouvé.')] : []));
+}
+
+$('#tradeSearch').addEventListener('input', (event) => { if (!tradeState.partner) renderPlayerResults(event.target.value); });
+$('#tradeChangePartner').addEventListener('click', resetTradeFlow);
+
+async function selectTradePartner(player) {
+  tradeState.partner = player;
+  tradeState.want = null;
+  tradeState.give = null;
+  $('#playerResults').replaceChildren();
+  $('#tradeSearch').value = '';
+  $('#tradePartnerRow').hidden = false;
+  $('#tradePartnerName').textContent = player.displayName;
+  $('#tradeStep3').hidden = true;
+  $('#proposeBtn').hidden = true;
+  const { cards } = await api('GET', `/api/users/${player.id}/collection`);
+  tradeState.theirCards = cards.filter((c) => c.tradable);
+  $('#tradeStep2').hidden = false;
+  renderTheirCards();
+}
+
+function renderTheirCards() {
+  $('#theirCardsGrid').replaceChildren(...(tradeState.theirCards.length ? tradeState.theirCards.map((c) => h('button', {
+    type: 'button', class: 'card-pick' + (tradeState.want === c.cardId ? ' picked' : ''), 'aria-label': `Demander ${c.name}`,
+    onclick: () => {
+      tradeState.want = c.cardId;
+      tradeState.give = null;
+      $('#tradeStep3').hidden = false;
+      $('#proposeBtn').hidden = true;
+      renderTheirCards();
+      renderMyCards();
+    },
+  }, cardView({ name: c.name, rarity: c.rarity }))) : [h('p', { class: 'muted' }, "Ce joueur n'a aucune carte échangeable pour l'instant.")]));
+}
+
+function renderMyCards() {
+  const wanted = tradeState.theirCards.find((c) => c.cardId === tradeState.want);
   const mine = wanted
     ? state.collection.filter((c) => c.rarity === wanted.rarity && c.tradable && c.quantity - c.reserved > 0 && c.cardId !== wanted.cardId)
     : [];
-  $('#giveCard').replaceChildren(
-    h('option', { value: '' }, !wanted ? '—' : mine.length ? 'Choisir une carte' : `Tu n'as aucune carte ${RARITIES[wanted.rarity].toLowerCase()} à offrir`),
-    ...mine.map((c) => h('option', { value: c.cardId }, `${c.name} (${c.quantity - c.reserved} disponible${c.quantity - c.reserved > 1 ? 's' : ''})`)));
+  $('#myCardsGrid').replaceChildren(...(mine.length ? mine.map((c) => h('button', {
+    type: 'button', class: 'card-pick' + (tradeState.give === c.cardId ? ' picked' : ''), 'aria-label': `Offrir ${c.name}`,
+    onclick: () => { tradeState.give = c.cardId; $('#proposeBtn').hidden = false; renderMyCards(); },
+  }, cardView({ name: c.name, rarity: c.rarity }, { quantity: c.quantity, reserved: c.reserved })))
+    : [h('p', { class: 'muted' }, wanted ? `Tu n'as aucune carte ${RARITIES[wanted.rarity].toLowerCase()} à offrir.` : '')]));
 }
 
-$('#tradeWith').addEventListener('change', () => loadTheirCards().catch((e) => say(e.message, true)));
-$('#wantCard').addEventListener('change', renderGiveOptions);
-
 $('#proposeBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
-  const toUserId = Number($('#tradeWith').value);
-  const requestedCardId = Number($('#wantCard').value);
-  const offeredCardId = Number($('#giveCard').value);
-  if (!toUserId || !requestedCardId || !offeredCardId) throw new Error('Choisis un joueur, la carte que tu veux et la carte que tu offres.');
-  await api('POST', '/api/trades', { toUserId, requestedCardId, offeredCardId });
+  if (!tradeState.partner || !tradeState.want || !tradeState.give) throw new Error('Choisis un joueur, la carte que tu veux et celle que tu offres.');
+  await api('POST', '/api/trades', { toUserId: tradeState.partner.id, requestedCardId: tradeState.want, offeredCardId: tradeState.give });
   say('Demande envoyée.');
   await refreshTrades();
 }));
