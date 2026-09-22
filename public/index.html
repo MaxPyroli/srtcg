@@ -606,14 +606,12 @@ function beginStack(opened) {
     if (FLASHY[card.rarity]) button.classList.add('flash');
     setTimeout(() => {
       button.classList.add('flyout');
-      $('#revealedRow').hidden = false;
-      $('#revealedRow').append(cardView(card));
       setTimeout(() => {
         button.remove();
         revealed++;
         if (revealed === buttons.length) {
           stack.hidden = true;
-          showFinalRow(opened, true);
+          showFinalRow(opened);
         } else if (autoPlaying) {
           reveal(buttons[revealed], opened.cards[revealed]);
         }
@@ -648,12 +646,12 @@ function beginStack(opened) {
   return revealAllRemaining;
 }
 
-/** Étape 3 : les 5 cartes révélées, en ligne (atteint aussi via « Tout révéler »). */
-function showFinalRow(opened, alreadyBuilt = false) {
+/** Étape 3 : les 5 cartes révélées d'un coup, une fois tout ouvert (atteint aussi via « Tout révéler »). */
+function showFinalRow(opened) {
   $('#revealAll').hidden = true;
   $('#openBtn').hidden = false;
   const row = $('#revealedRow');
-  if (!alreadyBuilt) row.replaceChildren(...opened.cards.map((c) => cardView(c)));
+  row.replaceChildren(...opened.cards.map((c) => cardView(c)));
   row.hidden = false;
   if (opened.kind === 'god') $('#announce').textContent = 'God Pack !';
   if (opened.kind === 'secret') $('#announce').textContent = 'Carte secrète !';
