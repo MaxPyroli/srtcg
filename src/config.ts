@@ -3,14 +3,14 @@
  * Les probabilités sont des propositions de départ, faites pour être ajustées.
  */
 export const ODDS = {
-  /** Un booster sur 2000 est un God Pack. */
-  godPack: 1 / 2000,
-  /** Un booster sur 1000 contient la carte secrète (à la place de la carte 5). */
-  secret: 1 / 1000,
+  /** Un booster sur 1000 est un God Pack. */
+  godPack: 1 / 1000,
+  /** Un booster sur 500 contient la carte secrète (à la place de la carte 5). */
+  secret: 1 / 500,
   /** Carte 4 : commune par défaut, avec une chance d'être peu commune ou rare. */
   card4: { peuCommune: 1 / 5, rare: 1 / 15 },
   /** Carte 5 : peu commune par défaut, avec une chance d'être rare ou légendaire. */
-  card5: { rare: 1 / 5, legendaire: 1 / 100 },
+  card5: { rare: 1 / 5, legendaire: 1 / 50 },
 } as const;
 
 /** Contenu d'un God Pack. */

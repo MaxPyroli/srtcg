@@ -7,7 +7,7 @@ Le combat, la connexion Twitch et le design viendront ensuite.
 ## Ce qui est fait
 
 - Ouverture de boosters côté serveur : 3 communes, une carte 4 qui peut être meilleure,
-  une carte 5 d'au moins peu commune, carte secrète (1 sur 1000), God Pack (1 sur 2000).
+  une carte 5 d'au moins peu commune, carte secrète (1 sur 500), God Pack (1 sur 1000).
   Les probabilités sont dans `src/config.ts`.
 - Collection de chaque joueur, visible par tous.
 - Échanges asynchrones entre cartes de **même rareté** : demande, acceptation, refus, annulation.

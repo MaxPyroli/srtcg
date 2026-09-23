@@ -103,14 +103,14 @@ describe('drawBooster : fréquences', () => {
       }
     }
     const normalOnly = normal - secret;
-    // God Pack : 1 sur 2000, secrète : 1 sur 1000 (parmi les boosters non God Pack)
-    expect(god / N).toBeCloseTo(1 / 2000, 3);
-    expect(secret / normal).toBeCloseTo(1 / 1000, 3);
+    // God Pack : 1 sur 1000, secrète : 1 sur 500 (parmi les boosters non God Pack)
+    expect(god / N).toBeCloseTo(1 / 1000, 3);
+    expect(secret / normal).toBeCloseTo(1 / 500, 3);
     // Carte 4 : 1 sur 5 peu commune, 1 sur 15 rare
     expect(c4pc / normal).toBeCloseTo(1 / 5, 2);
     expect(c4r / normal).toBeCloseTo(1 / 15, 2);
-    // Carte 5 (boosters normaux) : 1 sur 5 rare, 1 sur 100 légendaire
+    // Carte 5 (boosters normaux) : 1 sur 5 rare, 1 sur 50 légendaire
     expect(c5r / normalOnly).toBeCloseTo(1 / 5, 2);
-    expect(c5l / normalOnly).toBeCloseTo(1 / 100, 2);
+    expect(c5l / normalOnly).toBeCloseTo(1 / 50, 2);
   });
 });
