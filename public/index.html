@@ -303,6 +303,8 @@
   .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: 90vw; padding: 10px 16px; border-radius: 8px; background: var(--encre); color: #fff; opacity: 0; pointer-events: none; transition: opacity .2s; }
   .toast.show { opacity: 1; }
   .toast.bad { background: var(--erreur); }
+  .toast-title { font-weight: 700; }
+  .toast-sub { font-size: .82rem; color: rgba(255, 255, 255, .75); margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -670,9 +672,15 @@ async function api(method, path, body) {
 }
 
 let toastTimer;
+/** message peut être un texte simple, ou { title, subtitle } pour un petit sous-titre en dessous. */
 function say(message, bad = false) {
   const el = $('#toast');
-  el.textContent = message;
+  if (typeof message === 'string') {
+    el.replaceChildren(message);
+  } else {
+    el.replaceChildren(h('div', { class: 'toast-title' }, message.title),
+      message.subtitle ? h('div', { class: 'toast-sub' }, message.subtitle) : null);
+  }
   el.className = 'toast show' + (bad ? ' bad' : '');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.className = 'toast'; }, 4000);
@@ -687,7 +695,7 @@ function sayEach(messages, bad = false) {
 async function checkNotifications() {
   try {
     const notifications = await api('GET', '/api/notifications');
-    if (notifications.length) sayEach(notifications.map((n) => n.message));
+    if (notifications.length) sayEach(notifications.map((n) => ({ title: n.message, subtitle: n.detail })));
   } catch { /* pas grave, ce sera pour la prochaine fois */ }
 }
 

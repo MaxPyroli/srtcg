@@ -495,8 +495,8 @@ export async function grantBoosters(db: D1Database, adminId: number, userId: num
       .prepare("INSERT INTO admin_log (admin_id, action, target_user, details) VALUES (?1, 'grant_boosters', ?2, ?3)")
       .bind(adminId, userId, JSON.stringify({ amount })),
     db
-      .prepare('INSERT INTO notifications (user_id, message) VALUES (?1, ?2)')
-      .bind(userId, `Un administrateur t'a offert ${amount} ${boosterWord} !`),
+      .prepare('INSERT INTO notifications (user_id, message, detail) VALUES (?1, ?2, ?3)')
+      .bind(userId, `Tu as reçu ${amount} ${boosterWord} !`, 'Direction l\'onglet Boosters pour les ouvrir.'),
   ]);
   return target.boosters + amount;
 }
@@ -512,8 +512,8 @@ export async function grantBoostersToAll(db: D1Database, adminId: number, amount
       .bind(adminId, JSON.stringify({ amount, players: results.length })),
     ...results.map((u) =>
       db
-        .prepare('INSERT INTO notifications (user_id, message) VALUES (?1, ?2)')
-        .bind(u.id, `Un administrateur a offert ${amount} ${boosterWord} à tout le monde !`),
+        .prepare('INSERT INTO notifications (user_id, message, detail) VALUES (?1, ?2, ?3)')
+        .bind(u.id, `Tu as reçu ${amount} ${boosterWord} !`, 'Direction l\'onglet Boosters pour les ouvrir.'),
     ),
   ]);
   return results.length;
@@ -835,6 +835,7 @@ export async function listNotableOpenings(db: D1Database, limit = 30): Promise<N
 export interface NotificationRow {
   id: number;
   message: string;
+  detail: string | null;
   createdAt: string;
 }
 
@@ -844,7 +845,7 @@ export interface NotificationRow {
  */
 export async function takeUnreadNotifications(db: D1Database, userId: number): Promise<NotificationRow[]> {
   const { results } = await db
-    .prepare('SELECT id, message, created_at AS createdAt FROM notifications WHERE user_id = ?1 AND read_at IS NULL ORDER BY id')
+    .prepare('SELECT id, message, detail, created_at AS createdAt FROM notifications WHERE user_id = ?1 AND read_at IS NULL ORDER BY id')
     .bind(userId)
     .all<NotificationRow>();
   if (results.length > 0) {

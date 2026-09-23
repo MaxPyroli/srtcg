@@ -277,6 +277,8 @@ describe('notifications', () => {
     expect(first.status).toBe(200);
     expect(first.json).toHaveLength(1);
     expect(first.json[0].message).toContain('5 boosters');
+    expect(first.json[0].message).not.toContain('administrateur');
+    expect(first.json[0].detail).toBeTruthy();
 
     const second = await call('GET', '/api/notifications', { cookie: alice.cookie });
     expect(second.json).toHaveLength(0);
@@ -289,7 +291,7 @@ describe('notifications', () => {
 
     const res = await call('GET', '/api/notifications', { cookie: alice.cookie });
     expect(res.json).toHaveLength(1);
-    expect(res.json[0].message).toContain('tout le monde');
+    expect(res.json[0].message).toContain('3 boosters');
   });
 });
 
