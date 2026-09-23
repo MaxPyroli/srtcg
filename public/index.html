@@ -290,7 +290,8 @@
   ul.liste { list-style: none; margin: 0; padding: 0; }
   ul.liste li { border-top: 1px solid var(--trait); padding: 10px 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
   ul.liste li:first-child { border-top: 0; }
-  .pastille { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .8rem; background: var(--fond); }
+  .pastille { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .8rem; background: var(--fond); margin-left: 8px; }
+  .pastille.bad { background: color-mix(in srgb, var(--erreur) 18%, var(--fond)); color: var(--erreur); }
   .actions { display: flex; gap: 8px; }
 
   .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: 90vw; padding: 10px 16px; border-radius: 8px; background: var(--encre); color: #fff; opacity: 0; pointer-events: none; transition: opacity .2s; }
@@ -305,6 +306,7 @@
   <div id="who" class="who" hidden>
     <span>Joueur : <strong id="whoName"></strong></span>
     <span>Boosters : <strong id="whoBoosters">0</strong></span>
+    <span>Pièces : <strong id="whoCurrency">0</strong></span>
     <button id="logout" class="link" type="button">Se déconnecter</button>
   </div>
 </header>
@@ -514,9 +516,20 @@
         </label>
         <button id="grantBtn" class="primary" type="button">Offrir</button>
 
+        <h2 style="margin-top:28px">Offrir de la monnaie</h2>
+        <p class="muted">La monnaie interne ne sert encore à rien : le compteur existe déjà pour plus tard.</p>
+        <label>Joueur
+          <select id="grantCurrencyUser"></select>
+        </label>
+        <label>Montant
+          <input id="grantCurrencyAmount" type="number" min="1" max="10000" value="10">
+        </label>
+        <button id="grantCurrencyBtn" class="primary" type="button">Offrir</button>
+
         <h2 style="margin-top:28px">Gestion des comptes</h2>
         <p class="muted">Réinitialiser efface le mot de passe d'un joueur : il en choisit un nouveau à sa
-          prochaine connexion. Supprimer est définitif (compte, collection, échanges, codes créés).</p>
+          prochaine connexion. Bannir l'empêche de se connecter (et coupe sa session en cours) jusqu'à ce
+          qu'un admin le débannisse. Supprimer est définitif (compte, collection, échanges, codes créés).</p>
         <ul id="accountList" class="liste"></ul>
       </div>
 
@@ -735,6 +748,7 @@ function renderWho() {
   if (!state.me) return;
   $('#whoName').textContent = state.me.displayName;
   $('#whoBoosters').textContent = state.me.boosters;
+  $('#whoCurrency').textContent = state.me.currency;
   $('#tabAdmin').hidden = !state.me.isAdmin;
   $('#boosterInfo').textContent = state.me.boosters > 0
     ? `Tu as ${state.me.boosters} booster${state.me.boosters > 1 ? 's' : ''} à ouvrir.`
@@ -1300,8 +1314,10 @@ async function viewProfile(id) {
   $('#viewedBio').textContent = user.bio || 'Pas de bio pour le moment.';
   $('#viewedStats').replaceChildren(
     h('span', {}, 'Membre depuis : ', h('strong', {}, fmtDate(user.createdAt))),
-    h('span', {}, 'Cartes : ', h('strong', {}, `${user.distinctCards} différentes, ${user.totalCards} au total`)),
+    h('span', {}, 'Boosters possédés : ', h('strong', {}, user.boostersHeld)),
     h('span', {}, 'Boosters ouverts : ', h('strong', {}, user.boostersOpened)),
+    h('span', {}, 'Cartes : ', h('strong', {}, `${user.distinctCards} différentes, ${user.totalCards} au total`)),
+    h('span', {}, 'Collection complétée à : ', h('strong', {}, `${user.completionPercent}%`)),
     h('span', {}, 'Échanges conclus : ', h('strong', {}, user.tradesCompleted)));
   $('#viewedFeatured').textContent = user.featuredCard
     ? `★ Carte vedette : ${user.featuredCard.name} (${RARITIES[user.featuredCard.rarity]})`
@@ -1358,6 +1374,7 @@ $('#inviteClearBtn').addEventListener('click', (event) => guarded(event.currentT
 
 function renderGrantUsers() {
   $('#grantUser').replaceChildren(...state.players.map((p) => h('option', { value: p.id }, p.displayName)));
+  $('#grantCurrencyUser').replaceChildren(...state.players.map((p) => h('option', { value: p.id }, p.displayName)));
 }
 
 $('#grantBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
@@ -1368,9 +1385,17 @@ $('#grantBtn').addEventListener('click', (event) => guarded(event.currentTarget,
   say(`${amount} booster${amount > 1 ? 's' : ''} offert${amount > 1 ? 's' : ''}.`);
 }));
 
+$('#grantCurrencyBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
+  const userId = Number($('#grantCurrencyUser').value);
+  const amount = Number($('#grantCurrencyAmount').value);
+  const result = await api('POST', '/api/admin/grant-currency', { userId, amount });
+  if (userId === state.me.id) { state.me.currency = result.currency; renderWho(); }
+  say(`${amount} pièce${amount > 1 ? 's' : ''} offerte${amount > 1 ? 's' : ''}.`);
+}));
+
 function renderAccountList() {
   $('#accountList').replaceChildren(...(state.players.length ? state.players.map((p) => h('li', {},
-    h('span', {}, p.displayName),
+    h('span', {}, p.displayName, p.isBanned ? h('span', { class: 'pastille bad' }, `Banni${p.banReason ? ' : ' + p.banReason : ''}`) : null),
     h('span', { class: 'actions' },
       h('button', {
         type: 'button', class: 'secondary',
@@ -1379,6 +1404,29 @@ function renderAccountList() {
           say(`Mot de passe de ${p.displayName} réinitialisé.`);
         }),
       }, 'Réinitialiser le mot de passe'),
+      p.isBanned
+        ? h('button', {
+            type: 'button', class: 'secondary',
+            onclick: (e) => guarded(e.currentTarget, async () => {
+              await api('POST', `/api/admin/users/${p.id}/unban`);
+              say(`${p.displayName} n'est plus banni.`);
+              await refreshPlayers();
+              renderGrantUsers();
+              renderAccountList();
+            }),
+          }, 'Débannir')
+        : h('button', {
+            type: 'button', class: 'secondary',
+            onclick: (e) => guarded(e.currentTarget, async () => {
+              const reason = prompt(`Raison du bannissement de ${p.displayName} (optionnel) :`);
+              if (reason === null) return;
+              await api('POST', `/api/admin/users/${p.id}/ban`, { reason });
+              say(`${p.displayName} a été banni.`);
+              await refreshPlayers();
+              renderGrantUsers();
+              renderAccountList();
+            }),
+          }, 'Bannir'),
       h('button', {
         type: 'button', class: 'secondary',
         onclick: (e) => guarded(e.currentTarget, async () => {
@@ -1455,9 +1503,12 @@ function renderAdminStats(stats) {
 
 const ADMIN_ACTIONS = {
   grant_boosters: 'Boosters offerts',
+  grant_currency: 'Monnaie offerte',
   create_code: 'Code créé',
   reset_password: 'Mot de passe réinitialisé',
   delete_user: 'Compte supprimé',
+  ban_user: 'Joueur banni',
+  unban_user: 'Bannissement levé',
   set_invite_code: "Code d'invitation modifié",
 };
 
@@ -1467,8 +1518,10 @@ function renderAdminLog(entries) {
     try {
       const d = JSON.parse(l.details || '{}');
       if (l.action === 'grant_boosters') detail = `${d.amount} booster${d.amount > 1 ? 's' : ''}`;
+      if (l.action === 'grant_currency') detail = `${d.amount} pièce${d.amount > 1 ? 's' : ''}`;
       if (l.action === 'create_code') detail = `${d.code} (${d.boosters} booster${d.boosters > 1 ? 's' : ''} × ${d.maxUses})`;
       if (l.action === 'delete_user') detail = d.displayName;
+      if (l.action === 'ban_user' && d.reason) detail = d.reason;
     } catch { /* détails illisibles : on affiche juste l'action */ }
     return h('li', {}, h('span', {},
       `${fmtDate(l.createdAt)} — ${l.adminName} : ${ADMIN_ACTIONS[l.action] || l.action}`,
@@ -1498,8 +1551,9 @@ function renderAdminOpenings(openings) {
 (async () => {
   try {
     await enterGame(await api('GET', '/api/me'));
-  } catch {
+  } catch (error) {
     await initLanding();
+    if (error.code === 'banned') say(error.message, true);
   }
 })();
 </script>

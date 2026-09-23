@@ -98,7 +98,7 @@ export async function getCatalog(db: D1Database): Promise<CatalogData> {
 
 export async function getUser(db: D1Database, id: number): Promise<UserRow | null> {
   return db
-    .prepare('SELECT id, twitch_id, display_name, is_admin, boosters FROM users WHERE id = ?1')
+    .prepare('SELECT id, twitch_id, display_name, is_admin, boosters, currency, is_banned, ban_reason FROM users WHERE id = ?1')
     .bind(id)
     .first<UserRow>();
 }
@@ -141,9 +141,13 @@ export async function devLogin(
 ): Promise<{ user: UserRow; isNew: boolean }> {
   const twitchId = `dev:${input.name.toLowerCase()}`;
   const existing = await db
-    .prepare('SELECT id, twitch_id, display_name, is_admin, boosters, password_hash, password_salt FROM users WHERE twitch_id = ?1')
+    .prepare('SELECT id, twitch_id, display_name, is_admin, boosters, is_banned, ban_reason, password_hash, password_salt FROM users WHERE twitch_id = ?1')
     .bind(twitchId)
     .first<UserRow & { password_hash: string | null; password_salt: string | null }>();
+
+  if (existing?.is_banned) {
+    throw new GameError('banned', 403, existing.ban_reason ? `Compte banni : ${existing.ban_reason}` : 'Compte banni.');
+  }
 
   if (!existing || !existing.password_hash || !existing.password_salt) {
     if (!existing) {
@@ -177,7 +181,7 @@ export async function devLogin(
   }
 
   const user = await db
-    .prepare('SELECT id, twitch_id, display_name, is_admin, boosters FROM users WHERE twitch_id = ?1')
+    .prepare('SELECT id, twitch_id, display_name, is_admin, boosters, currency, is_banned, ban_reason FROM users WHERE twitch_id = ?1')
     .bind(twitchId)
     .first<UserRow>();
   if (!user) throw new Error('Connexion impossible');
@@ -237,14 +241,55 @@ export async function deleteUser(db: D1Database, adminId: number, targetUserId: 
   ]);
 }
 
+/** Admin : bannit un joueur (l'empêche de se connecter, et invalide sa session en cours). */
+export async function banUser(db: D1Database, adminId: number, targetUserId: number, reason: string | null): Promise<void> {
+  if (adminId === targetUserId) throw new GameError('cannot_ban_self', 400, 'Tu ne peux pas te bannir toi-même.');
+  const target = await getUser(db, targetUserId);
+  if (!target) throw new GameError('user_not_found', 404, 'Joueur introuvable.');
+  if (target.is_admin) throw new GameError('cannot_ban_admin', 400, 'Impossible de bannir un administrateur.');
+  await db.batch([
+    db.prepare('UPDATE users SET is_banned = 1, ban_reason = ?2 WHERE id = ?1').bind(targetUserId, reason),
+    db
+      .prepare("INSERT INTO admin_log (admin_id, action, target_user, details) VALUES (?1, 'ban_user', ?2, ?3)")
+      .bind(adminId, targetUserId, JSON.stringify({ reason })),
+  ]);
+}
+
+/** Admin : lève un bannissement. */
+export async function unbanUser(db: D1Database, adminId: number, targetUserId: number): Promise<void> {
+  const target = await getUser(db, targetUserId);
+  if (!target) throw new GameError('user_not_found', 404, 'Joueur introuvable.');
+  await db.batch([
+    db.prepare('UPDATE users SET is_banned = 0, ban_reason = NULL WHERE id = ?1').bind(targetUserId),
+    db.prepare("INSERT INTO admin_log (admin_id, action, target_user) VALUES (?1, 'unban_user', ?2)").bind(adminId, targetUserId),
+  ]);
+}
+
+/** Offre de la monnaie interne (compte admin). Sert à rien pour l'instant, mais l'action est journalisée. */
+export async function grantCurrency(db: D1Database, adminId: number, userId: number, amount: number): Promise<number> {
+  const target = await getUser(db, userId);
+  if (!target) throw new GameError('user_not_found', 404, 'Joueur introuvable.');
+  await db.batch([
+    db.prepare('UPDATE users SET currency = currency + ?2 WHERE id = ?1').bind(userId, amount),
+    db
+      .prepare("INSERT INTO admin_log (admin_id, action, target_user, details) VALUES (?1, 'grant_currency', ?2, ?3)")
+      .bind(adminId, userId, JSON.stringify({ amount })),
+  ]);
+  return target.currency + amount;
+}
+
 export async function listUsers(db: D1Database) {
   const { results } = await db
     .prepare(
       `SELECT u.id, u.display_name AS displayName, u.avatar_emoji AS avatarEmoji, u.avatar_color AS avatarColor,
+              u.is_banned AS isBanned, u.ban_reason AS banReason,
               (SELECT COUNT(*) FROM collection c WHERE c.user_id = u.id AND c.quantity > 0) AS distinctCards
        FROM users u ORDER BY u.display_name COLLATE NOCASE LIMIT 200`,
     )
-    .all<{ id: number; displayName: string; avatarEmoji: string; avatarColor: string; distinctCards: number }>();
+    .all<{
+      id: number; displayName: string; avatarEmoji: string; avatarColor: string;
+      isBanned: number; banReason: string | null; distinctCards: number;
+    }>();
   return results;
 }
 
@@ -263,7 +308,10 @@ export interface ProfileRow {
   distinctCards: number;
   totalCards: number;
   boostersOpened: number;
+  boostersHeld: number;
   tradesCompleted: number;
+  /** % de la série possédée au moins une fois (carte secrète exclue, comme dans l'écran collection). */
+  completionPercent: number;
   featuredCard: { id: number; name: string; rarity: Rarity } | null;
 }
 
@@ -272,10 +320,14 @@ export async function getProfile(db: D1Database, userId: number): Promise<Profil
     .prepare(
       `SELECT u.id, u.display_name AS displayName, u.is_admin AS isAdmin,
               u.avatar_emoji AS avatarEmoji, u.avatar_color AS avatarColor, u.bio, u.created_at AS createdAt,
+              u.boosters AS boostersHeld,
               (SELECT COUNT(*) FROM collection c WHERE c.user_id = u.id AND c.quantity > 0) AS distinctCards,
               (SELECT COALESCE(SUM(quantity), 0) FROM collection c WHERE c.user_id = u.id) AS totalCards,
               (SELECT COUNT(*) FROM openings o WHERE o.user_id = u.id) AS boostersOpened,
               (SELECT COUNT(*) FROM trades t WHERE (t.from_user = u.id OR t.to_user = u.id) AND t.status = 'accepted') AS tradesCompleted,
+              (SELECT COUNT(*) FROM collection c JOIN cards k ON k.id = c.card_id
+               WHERE c.user_id = u.id AND c.quantity > 0 AND k.rarity <> 'secrete') AS distinctNonSecret,
+              (SELECT COUNT(*) FROM cards WHERE rarity <> 'secrete') AS totalNonSecret,
               fc.id AS featuredCardId, fc.name AS featuredCardName, fc.rarity AS featuredCardRarity
        FROM users u
        LEFT JOIN collection fcol ON fcol.user_id = u.id AND fcol.card_id = u.featured_card_id AND fcol.quantity >= 1
@@ -284,16 +336,19 @@ export async function getProfile(db: D1Database, userId: number): Promise<Profil
     )
     .bind(userId)
     .first<
-      Omit<ProfileRow, 'featuredCard'> & {
+      Omit<ProfileRow, 'featuredCard' | 'completionPercent'> & {
+        distinctNonSecret: number;
+        totalNonSecret: number;
         featuredCardId: number | null;
         featuredCardName: string | null;
         featuredCardRarity: Rarity | null;
       }
     >();
   if (!row) return null;
-  const { featuredCardId, featuredCardName, featuredCardRarity, ...rest } = row;
+  const { featuredCardId, featuredCardName, featuredCardRarity, distinctNonSecret, totalNonSecret, ...rest } = row;
   return {
     ...rest,
+    completionPercent: totalNonSecret > 0 ? Math.round((distinctNonSecret / totalNonSecret) * 100) : 0,
     featuredCard: featuredCardId != null ? { id: featuredCardId, name: featuredCardName as string, rarity: featuredCardRarity as Rarity } : null,
   };
 }

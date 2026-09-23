@@ -2,7 +2,10 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import type { Env, UserRow } from './types.ts';
-import { SESSION_TTL_SECONDS, MAX_GRANT, MAX_CODE_USES, MAX_CODE_HOURS, MAX_BIO_LENGTH, AVATAR_EMOJIS, AVATAR_COLORS } from './config.ts';
+import {
+  SESSION_TTL_SECONDS, MAX_GRANT, MAX_CURRENCY_GRANT, MAX_BAN_REASON_LENGTH,
+  MAX_CODE_USES, MAX_CODE_HOURS, MAX_BIO_LENGTH, AVATAR_EMOJIS, AVATAR_COLORS,
+} from './config.ts';
 import { cryptoRng } from './rng.ts';
 import { signSession, verifySession } from './auth.ts';
 import {
@@ -12,6 +15,9 @@ import {
   devLogin,
   resetPassword,
   deleteUser,
+  banUser,
+  unbanUser,
+  grantCurrency,
   listUsers,
   openBooster,
   listCollection,
@@ -111,6 +117,11 @@ const requireUser = async (c: Context<AppEnv>, next: () => Promise<void>) => {
   const userId = await verifySession(getCookie(c, SESSION_COOKIE), sessionSecret(c.env));
   const user = userId ? await getUser(c.env.DB, userId) : null;
   if (!user) return c.json({ error: 'unauthenticated', message: 'Connexion requise.' }, 401);
+  if (user.is_banned) {
+    // Un bannissement doit couper l'accès immédiatement, même à une session déjà ouverte.
+    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    return c.json({ error: 'banned', message: user.ban_reason ? `Compte banni : ${user.ban_reason}` : 'Compte banni.' }, 403);
+  }
   c.set('user', user);
   await next();
 };
@@ -153,7 +164,7 @@ app.post('/api/logout', (c) => {
 });
 
 function publicUser(user: UserRow) {
-  return { id: user.id, displayName: user.display_name, isAdmin: user.is_admin === 1, boosters: user.boosters };
+  return { id: user.id, displayName: user.display_name, isAdmin: user.is_admin === 1, boosters: user.boosters, currency: user.currency };
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +308,28 @@ app.delete('/api/admin/users/:id', async (c) => {
   const id = idParam(c.req.param('id'), 'id');
   await deleteUser(c.env.DB, c.get('user').id, id);
   return c.json({ ok: true });
+});
+
+app.post('/api/admin/users/:id/ban', async (c) => {
+  const id = idParam(c.req.param('id'), 'id');
+  const body = await readJson(c);
+  const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, MAX_BAN_REASON_LENGTH) : '';
+  await banUser(c.env.DB, c.get('user').id, id, reason || null);
+  return c.json({ ok: true });
+});
+
+app.post('/api/admin/users/:id/unban', async (c) => {
+  const id = idParam(c.req.param('id'), 'id');
+  await unbanUser(c.env.DB, c.get('user').id, id);
+  return c.json({ ok: true });
+});
+
+app.post('/api/admin/grant-currency', async (c) => {
+  const body = await readJson(c);
+  const amount = positiveInt(body.amount, 'amount');
+  if (amount > MAX_CURRENCY_GRANT) throw new GameError('bad_request', 400, `Maximum ${MAX_CURRENCY_GRANT} à la fois.`);
+  const currency = await grantCurrency(c.env.DB, c.get('user').id, positiveInt(body.userId, 'userId'), amount);
+  return c.json({ userId: body.userId, currency });
 });
 
 app.get('/api/admin/invite-code', async (c) => c.json({ code: await getSetting(c.env.DB, INVITE_CODE_KEY) }));

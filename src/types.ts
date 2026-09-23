@@ -18,6 +18,9 @@ export interface UserRow {
   display_name: string;
   is_admin: number;
   boosters: number;
+  currency: number;
+  is_banned: number;
+  ban_reason: string | null;
 }
 
 export interface Env {

@@ -230,6 +230,67 @@ describe('administration', () => {
     expect((await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: chef.id, amount: 101 } })).status).toBe(400);
     expect((await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: 9999, amount: 1 } })).status).toBe(404);
   });
+
+  it('un admin peut offrir de la monnaie, et l\'action est journalisée', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    const res = await call('POST', '/api/admin/grant-currency', { cookie: chef.cookie, body: { userId: alice.id, amount: 50 } });
+    expect(res.status).toBe(200);
+    expect(res.json.currency).toBe(50);
+    const me = await call('GET', '/api/me', { cookie: alice.cookie });
+    expect(me.json.currency).toBe(50);
+    const log = db.one("SELECT COUNT(*) AS n FROM admin_log WHERE action = 'grant_currency'");
+    expect(Number(log?.n)).toBe(1);
+  });
+});
+
+describe('sanctions', () => {
+  it('un admin bannit un joueur : sa session en cours est coupée et il ne peut plus se reconnecter', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    const res = await call('POST', `/api/admin/users/${alice.id}/ban`, { cookie: chef.cookie, body: { reason: 'triche' } });
+    expect(res.status).toBe(200);
+
+    const meAfter = await call('GET', '/api/me', { cookie: alice.cookie });
+    expect(meAfter.status).toBe(403);
+    expect(meAfter.json.error).toBe('banned');
+
+    const relog = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'password123' } });
+    expect(relog.status).toBe(403);
+    expect(relog.json.error).toBe('banned');
+    expect(relog.json.message).toContain('triche');
+  });
+
+  it('un admin lève un bannissement', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    await call('POST', `/api/admin/users/${alice.id}/ban`, { cookie: chef.cookie, body: {} });
+    await call('POST', `/api/admin/users/${alice.id}/unban`, { cookie: chef.cookie });
+    const relog = await call('POST', '/api/dev/login', { body: { name: 'alice', password: 'password123' } });
+    expect(relog.status).toBe(200);
+  });
+
+  it('un admin ne peut pas se bannir lui-même', async () => {
+    const chef = await login('chef');
+    const res = await call('POST', `/api/admin/users/${chef.id}/ban`, { cookie: chef.cookie, body: {} });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('cannot_ban_self');
+  });
+
+  it('un admin ne peut pas bannir un autre admin', async () => {
+    env.DEV_ADMINS = 'chef,superviseur';
+    const chef = await login('chef');
+    const superviseur = await login('superviseur');
+    const res = await call('POST', `/api/admin/users/${superviseur.id}/ban`, { cookie: chef.cookie, body: {} });
+    expect(res.status).toBe(400);
+    expect(res.json.error).toBe('cannot_ban_admin');
+  });
+
+  it('réserve le bannissement aux admins', async () => {
+    const alice = await login('alice');
+    const bob = await login('bob');
+    expect((await call('POST', `/api/admin/users/${bob.id}/ban`, { cookie: alice.cookie, body: {} })).status).toBe(403);
+  });
 });
 
 describe('suppression de compte', () => {
@@ -404,6 +465,22 @@ describe('profils', () => {
       boostersOpened: 0,
       tradesCompleted: 0,
       featuredCard: null,
+    });
+  });
+
+  it('les stats du profil reflètent boosters possédés, cartes et complétion de la série', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: alice.id, amount: 3 } });
+    give(alice.id, COMMUNE_A, 2);
+    give(alice.id, PEU_COMMUNE);
+    const res = await call('GET', `/api/users/${alice.id}/collection`, { cookie: alice.cookie });
+    expect(res.json.user).toMatchObject({
+      boostersHeld: 3,
+      distinctCards: 2,
+      totalCards: 3,
+      // 2 cartes différentes sur 100 non-secrètes (la carte secrète n'entre pas dans la complétion).
+      completionPercent: 2,
     });
   });
 
