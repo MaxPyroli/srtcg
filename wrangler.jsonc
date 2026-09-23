@@ -5,7 +5,10 @@
   "compatibility_date": "2025-09-01",
 
   // Le site (pages, images) est servi gratuitement depuis le dossier public/.
-  "assets": { "directory": "./public" },
+  // not_found_handling : une adresse comme /admin ou /collection ne correspond à aucun fichier,
+  // donc sans ça Cloudflare renvoyait une 404 au lieu de la page (qui gère ces routes elle-même en JS).
+  // run_worker_first : /api/* doit toujours passer par le Worker, jamais par ce filet de secours.
+  "assets": { "directory": "./public", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
 
   "d1_databases": [
     {

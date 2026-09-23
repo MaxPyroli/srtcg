@@ -791,7 +791,7 @@ async function enterGame(me) {
   for (const id of ['landing', 'login', 'codeGate', 'createForm']) $(`#${id}`).hidden = true;
   $('#game').hidden = false;
   renderWho();
-  showTab('booster');
+  showTab(tabFromPath(location.pathname), { push: false });
 }
 
 function openWelcome(me) {
@@ -902,11 +902,25 @@ async function refreshMe() {
   } catch { /* la session a peut-être expiré : la prochaine action le dira */ }
 }
 
-function showTab(name) {
+/** Une adresse par onglet, pour qu'actualiser la page (ou revenir en arrière) n'y ramène pas
+ * toujours au début : /collection, /echanges, /profils, /admin. "booster" reste à la racine. */
+const TAB_PATHS = { booster: '/', collection: '/collection', trades: '/echanges', profiles: '/profils', admin: '/admin' };
+const PATH_TABS = Object.fromEntries(Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab]));
+
+function tabFromPath(path) {
+  return PATH_TABS[path] ?? 'booster';
+}
+
+function showTab(name, { push = true } = {}) {
+  if (name === 'admin' && !state.me?.isAdmin) name = 'booster';
   for (const button of document.querySelectorAll('#mainTabs button')) {
     button.setAttribute('aria-selected', String(button.dataset.tab === name));
   }
   for (const id of ['booster', 'collection', 'trades', 'profiles', 'admin']) $(`#tab-${id}`).hidden = id !== name;
+  if (push) {
+    const path = TAB_PATHS[name] ?? '/';
+    if (location.pathname !== path) history.pushState({ tab: name }, '', path);
+  }
   if (name === 'booster') { refreshMe(); refreshOpeningHistory(); }
   if (name === 'collection') refreshCollection();
   if (name === 'trades') refreshTrades();
@@ -923,6 +937,12 @@ function showTab(name) {
 document.querySelector('#mainTabs').addEventListener('click', (event) => {
   const tab = event.target.closest('button[data-tab]');
   if (tab) showTab(tab.dataset.tab);
+});
+
+// Boutons précédent/suivant du navigateur : ré-affiche l'onglet correspondant, sans re-pousser d'entrée.
+window.addEventListener('popstate', () => {
+  if (!state.me) return;
+  showTab(tabFromPath(location.pathname), { push: false });
 });
 
 function showAdminSubtab(name) {
