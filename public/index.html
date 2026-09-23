@@ -908,7 +908,16 @@ const TAB_PATHS = { booster: '/', collection: '/collection', trades: '/echanges'
 const PATH_TABS = Object.fromEntries(Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab]));
 
 function tabFromPath(path) {
-  return PATH_TABS[path] ?? 'booster';
+  if (path in PATH_TABS) return PATH_TABS[path];
+  return path.startsWith('/admin/') ? 'admin' : 'booster';
+}
+
+/** Pareil, mais pour les sous-onglets de l'administration : /admin/joueurs, /admin/codes, etc. */
+const SUBTAB_PATHS = { access: '/admin/acces', players: '/admin/joueurs', codes: '/admin/codes', log: '/admin/journal', trades: '/admin/echanges', openings: '/admin/tirages' };
+const PATH_SUBTABS = Object.fromEntries(Object.entries(SUBTAB_PATHS).map(([tab, path]) => [path, tab]));
+
+function subtabFromPath(path) {
+  return PATH_SUBTABS[path] ?? 'access';
 }
 
 function showTab(name, { push = true } = {}) {
@@ -931,6 +940,7 @@ function showTab(name, { push = true } = {}) {
     refreshBoosterCodes();
     refreshAdminOverview();
     refreshInviteCode();
+    showAdminSubtab(subtabFromPath(location.pathname), { push: false });
   }
 }
 
@@ -945,11 +955,15 @@ window.addEventListener('popstate', () => {
   showTab(tabFromPath(location.pathname), { push: false });
 });
 
-function showAdminSubtab(name) {
+function showAdminSubtab(name, { push = true } = {}) {
   for (const button of document.querySelectorAll('#adminSubtabs button')) {
     button.setAttribute('aria-selected', String(button.dataset.subtab === name));
   }
   for (const id of ['access', 'players', 'codes', 'log', 'trades', 'openings']) $(`#admin-${id}`).hidden = id !== name;
+  if (push) {
+    const path = SUBTAB_PATHS[name] ?? '/admin';
+    if (location.pathname !== path) history.pushState({ tab: 'admin', subtab: name }, '', path);
+  }
 }
 
 document.querySelector('#adminSubtabs').addEventListener('click', (event) => {
