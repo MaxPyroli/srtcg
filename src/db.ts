@@ -278,6 +278,43 @@ export async function grantCurrency(db: D1Database, adminId: number, userId: num
   return target.currency + amount;
 }
 
+export interface PlayerStatsRow {
+  id: number;
+  displayName: string;
+  boostersHeld: number;
+  currency: number;
+  distinctCards: number;
+  totalCards: number;
+  boostersOpened: number;
+  tradesCompleted: number;
+  completionPercent: number;
+  isBanned: number;
+}
+
+/** Vue d'ensemble admin : les stats de chaque joueur, une ligne par compte. */
+export async function listPlayerStats(db: D1Database): Promise<PlayerStatsRow[]> {
+  const totalNonSecretRow = await db.prepare("SELECT COUNT(*) AS n FROM cards WHERE rarity <> 'secrete'").first<{ n: number }>();
+  const totalNonSecret = totalNonSecretRow?.n ?? 0;
+
+  const { results } = await db
+    .prepare(
+      `SELECT u.id, u.display_name AS displayName, u.boosters AS boostersHeld, u.currency, u.is_banned AS isBanned,
+              (SELECT COUNT(*) FROM collection c WHERE c.user_id = u.id AND c.quantity > 0) AS distinctCards,
+              (SELECT COALESCE(SUM(quantity), 0) FROM collection c WHERE c.user_id = u.id) AS totalCards,
+              (SELECT COUNT(*) FROM openings o WHERE o.user_id = u.id) AS boostersOpened,
+              (SELECT COUNT(*) FROM trades t WHERE (t.from_user = u.id OR t.to_user = u.id) AND t.status = 'accepted') AS tradesCompleted,
+              (SELECT COUNT(*) FROM collection c JOIN cards k ON k.id = c.card_id
+               WHERE c.user_id = u.id AND c.quantity > 0 AND k.rarity <> 'secrete') AS distinctNonSecret
+       FROM users u ORDER BY u.display_name COLLATE NOCASE LIMIT 200`,
+    )
+    .all<Omit<PlayerStatsRow, 'completionPercent'> & { distinctNonSecret: number }>();
+
+  return results.map(({ distinctNonSecret, ...rest }) => ({
+    ...rest,
+    completionPercent: totalNonSecret > 0 ? Math.round((distinctNonSecret / totalNonSecret) * 100) : 0,
+  }));
+}
+
 export async function listUsers(db: D1Database) {
   const { results } = await db
     .prepare(

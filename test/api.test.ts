@@ -434,6 +434,20 @@ describe('vue d\'ensemble admin', () => {
     expect(Array.isArray(res.json.notableOpenings)).toBe(true);
   });
 
+  it('la liste des stats joueurs est réservée aux admins et reflète leurs cartes/boosters', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    expect((await call('GET', '/api/admin/players', { cookie: alice.cookie })).status).toBe(403);
+
+    await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: alice.id, amount: 4 } });
+    give(alice.id, COMMUNE_A, 2);
+
+    const res = await call('GET', '/api/admin/players', { cookie: chef.cookie });
+    expect(res.status).toBe(200);
+    const row = res.json.find((p: any) => p.displayName === 'alice');
+    expect(row).toMatchObject({ boostersHeld: 4, distinctCards: 1, totalCards: 2, isBanned: 0 });
+  });
+
   it('signale les tirages contenant une carte rare et plus, mais pas les tirages 100% communs', async () => {
     const chef = await login('chef');
     db.exec(`INSERT INTO openings (user_id, kind, card_ids) VALUES (${chef.id}, 'normal', '[1,2,3,4,${RARE}]')`);

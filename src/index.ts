@@ -19,6 +19,7 @@ import {
   unbanUser,
   grantCurrency,
   listUsers,
+  listPlayerStats,
   openBooster,
   listCollection,
   grantBoosters,
@@ -357,6 +358,8 @@ app.post('/api/admin/codes', async (c) => {
 });
 
 app.get('/api/admin/codes', async (c) => c.json(await listBoosterCodes(c.env.DB)));
+
+app.get('/api/admin/players', async (c) => c.json(await listPlayerStats(c.env.DB)));
 
 app.get('/api/admin/overview', async (c) => {
   const [stats, adminLog, trades, notableOpenings] = await Promise.all([

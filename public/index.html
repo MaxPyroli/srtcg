@@ -292,6 +292,12 @@
   ul.liste li:first-child { border-top: 0; }
   .pastille { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .8rem; background: var(--fond); margin-left: 8px; }
   .pastille.bad { background: color-mix(in srgb, var(--erreur) 18%, var(--fond)); color: var(--erreur); }
+
+  .table-wrap { overflow-x: auto; margin-bottom: 8px; }
+  #statsTable { border-collapse: collapse; width: 100%; min-width: 560px; font-size: .92rem; }
+  #statsTable th, #statsTable td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--trait); white-space: nowrap; }
+  #statsTable th { color: var(--discret); font-weight: 600; }
+  #statsTable tr.banned td { opacity: .55; }
   .actions { display: flex; gap: 8px; }
 
   .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: 90vw; padding: 10px 16px; border-radius: 8px; background: var(--encre); color: #fff; opacity: 0; pointer-events: none; transition: opacity .2s; }
@@ -507,7 +513,20 @@
       </div>
 
       <div id="admin-players" hidden>
-        <h2>Offrir des boosters</h2>
+        <h2>Statistiques des joueurs</h2>
+        <div class="table-wrap">
+          <table id="statsTable">
+            <thead>
+              <tr>
+                <th>Joueur</th><th>Boosters</th><th>Pièces</th><th>Cartes</th>
+                <th>Complétion</th><th>Boosters ouverts</th><th>Échanges conclus</th>
+              </tr>
+            </thead>
+            <tbody id="statsTableBody"></tbody>
+          </table>
+        </div>
+
+        <h2 style="margin-top:28px">Offrir des boosters</h2>
         <label>Joueur
           <select id="grantUser"></select>
         </label>
@@ -894,6 +913,7 @@ function showTab(name) {
   if (name === 'profiles') refreshProfilesTab();
   if (name === 'admin') {
     refreshPlayers().then(() => { renderGrantUsers(); renderAccountList(); });
+    refreshPlayerStats();
     refreshBoosterCodes();
     refreshAdminOverview();
     refreshInviteCode();
@@ -1372,6 +1392,22 @@ $('#inviteClearBtn').addEventListener('click', (event) => guarded(event.currentT
   say('Code retiré : inscription libre.');
 }));
 
+async function refreshPlayerStats() {
+  renderPlayerStats(await api('GET', '/api/admin/players'));
+}
+
+function renderPlayerStats(players) {
+  $('#statsTableBody').replaceChildren(...(players.length ? players.map((p) => h('tr', { class: p.isBanned ? 'banned' : '' },
+    h('td', {}, p.displayName, p.isBanned ? ' 🚫' : ''),
+    h('td', {}, String(p.boostersHeld)),
+    h('td', {}, String(p.currency)),
+    h('td', {}, `${p.distinctCards} / ${p.totalCards}`),
+    h('td', {}, `${p.completionPercent}%`),
+    h('td', {}, String(p.boostersOpened)),
+    h('td', {}, String(p.tradesCompleted)),
+  )) : [h('tr', {}, h('td', { colspan: '7', class: 'muted' }, 'Aucun joueur pour le moment.'))]));
+}
+
 function renderGrantUsers() {
   $('#grantUser').replaceChildren(...state.players.map((p) => h('option', { value: p.id }, p.displayName)));
   $('#grantCurrencyUser').replaceChildren(...state.players.map((p) => h('option', { value: p.id }, p.displayName)));
@@ -1383,6 +1419,7 @@ $('#grantBtn').addEventListener('click', (event) => guarded(event.currentTarget,
   const result = await api('POST', '/api/admin/grant', { userId, amount });
   if (userId === state.me.id) { state.me.boosters = result.boosters; renderWho(); }
   say(`${amount} booster${amount > 1 ? 's' : ''} offert${amount > 1 ? 's' : ''}.`);
+  await refreshPlayerStats();
 }));
 
 $('#grantCurrencyBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
@@ -1391,6 +1428,7 @@ $('#grantCurrencyBtn').addEventListener('click', (event) => guarded(event.curren
   const result = await api('POST', '/api/admin/grant-currency', { userId, amount });
   if (userId === state.me.id) { state.me.currency = result.currency; renderWho(); }
   say(`${amount} pièce${amount > 1 ? 's' : ''} offerte${amount > 1 ? 's' : ''}.`);
+  await refreshPlayerStats();
 }));
 
 function renderAccountList() {
@@ -1413,6 +1451,7 @@ function renderAccountList() {
               await refreshPlayers();
               renderGrantUsers();
               renderAccountList();
+              await refreshPlayerStats();
             }),
           }, 'Débannir')
         : h('button', {
@@ -1425,6 +1464,7 @@ function renderAccountList() {
               await refreshPlayers();
               renderGrantUsers();
               renderAccountList();
+              await refreshPlayerStats();
             }),
           }, 'Bannir'),
       h('button', {
@@ -1436,6 +1476,7 @@ function renderAccountList() {
           await refreshPlayers();
           renderGrantUsers();
           renderAccountList();
+          await refreshPlayerStats();
         }),
       }, 'Supprimer')))
   ) : [h('li', { class: 'muted' }, 'Aucun joueur pour le moment.')]));
