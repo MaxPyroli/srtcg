@@ -116,15 +116,16 @@
   .r-rare { --c: var(--rare); box-shadow: 0 0 10px var(--c); }
   .r-legendaire { --c: var(--legendaire); box-shadow: 0 0 16px var(--c); }
   /* Halo multicolore (les 5 couleurs de l'équipe) plutôt qu'une lueur unie : un box-shadow ne peut
-     pas prendre un dégradé, donc on superpose une ombre de chaque couleur, décalée tout autour. */
+     pas prendre un dégradé, donc on superpose une ombre de chaque couleur, en pentagone autour de
+     la carte (décalages assez espacés pour que les 5 couleurs restent distinctes, pas mélangées). */
   .r-secrete {
     --c: var(--secrete);
     box-shadow:
-      0 -6px 18px #178ae9,
-      6px -3px 18px #27b930,
-      6px 6px 18px #f0de3d,
-      -6px 6px 18px #f12914,
-      -6px -3px 18px #ae2fd7;
+      0 -13px 20px -2px #178ae9,
+      12px -4px 20px -2px #27b930,
+      7px 11px 20px -2px #f0de3d,
+      -7px 11px 20px -2px #f12914,
+      -12px -4px 20px -2px #ae2fd7;
   }
 
   /* Ouverture d'un booster : la carte se retourne quand on la touche */
@@ -184,10 +185,14 @@
   @keyframes card-flash { 0%, 100% { box-shadow: 0 0 16px var(--c); } 40% { box-shadow: 0 0 46px var(--c); } }
   @keyframes card-flash-secrete {
     0%, 100% {
-      box-shadow: 0 -5px 16px #178ae9, 5px -2px 16px #27b930, 5px 5px 16px #f0de3d, -5px 5px 16px #f12914, -5px -2px 16px #ae2fd7;
+      box-shadow:
+        0 -10px 16px -2px #178ae9, 9px -3px 16px -2px #27b930, 6px 8px 16px -2px #f0de3d,
+        -6px 8px 16px -2px #f12914, -9px -3px 16px -2px #ae2fd7;
     }
     40% {
-      box-shadow: 0 -14px 42px #178ae9, 14px -7px 42px #27b930, 14px 14px 42px #f0de3d, -14px 14px 42px #f12914, -14px -7px 42px #ae2fd7;
+      box-shadow:
+        0 -28px 42px -2px #178ae9, 26px -9px 42px -2px #27b930, 16px 22px 42px -2px #f0de3d,
+        -16px 22px 42px -2px #f12914, -26px -9px 42px -2px #ae2fd7;
     }
   }
 
