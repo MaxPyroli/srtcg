@@ -242,6 +242,55 @@ describe('administration', () => {
     const log = db.one("SELECT COUNT(*) AS n FROM admin_log WHERE action = 'grant_currency'");
     expect(Number(log?.n)).toBe(1);
   });
+
+  it('un admin peut offrir des boosters à tout le monde d\'un coup, et chacun est notifié', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    const bob = await login('bob');
+    const res = await call('POST', '/api/admin/grant-all', { cookie: chef.cookie, body: { amount: 2 } });
+    expect(res.status).toBe(200);
+    expect(res.json.players).toBe(3); // chef + alice + bob
+
+    for (const p of [chef, alice, bob]) {
+      const me = await call('GET', '/api/me', { cookie: p.cookie });
+      expect(me.json.boosters).toBe(2);
+    }
+    const log = db.one("SELECT COUNT(*) AS n FROM admin_log WHERE action = 'grant_boosters_all'");
+    expect(Number(log?.n)).toBe(1);
+  });
+
+  it('réserve le don groupé aux admins, et refuse les quantités absurdes', async () => {
+    const alice = await login('alice');
+    expect((await call('POST', '/api/admin/grant-all', { cookie: alice.cookie, body: { amount: 2 } })).status).toBe(403);
+    const chef = await login('chef');
+    expect((await call('POST', '/api/admin/grant-all', { cookie: chef.cookie, body: { amount: 101 } })).status).toBe(400);
+  });
+});
+
+describe('notifications', () => {
+  it('un joueur voit les boosters reçus hors ligne à sa prochaine visite, une seule fois', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    await call('POST', '/api/admin/grant', { cookie: chef.cookie, body: { userId: alice.id, amount: 5 } });
+
+    const first = await call('GET', '/api/notifications', { cookie: alice.cookie });
+    expect(first.status).toBe(200);
+    expect(first.json).toHaveLength(1);
+    expect(first.json[0].message).toContain('5 boosters');
+
+    const second = await call('GET', '/api/notifications', { cookie: alice.cookie });
+    expect(second.json).toHaveLength(0);
+  });
+
+  it('un don groupé notifie tous les joueurs', async () => {
+    const chef = await login('chef');
+    const alice = await login('alice');
+    await call('POST', '/api/admin/grant-all', { cookie: chef.cookie, body: { amount: 3 } });
+
+    const res = await call('GET', '/api/notifications', { cookie: alice.cookie });
+    expect(res.json).toHaveLength(1);
+    expect(res.json[0].message).toContain('tout le monde');
+  });
 });
 
 describe('sanctions', () => {

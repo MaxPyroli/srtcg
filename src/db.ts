@@ -234,6 +234,7 @@ export async function deleteUser(db: D1Database, adminId: number, targetUserId: 
     db.prepare('DELETE FROM trades WHERE from_user = ?1 OR to_user = ?1').bind(targetUserId),
     db.prepare('DELETE FROM collection WHERE user_id = ?1').bind(targetUserId),
     db.prepare('DELETE FROM openings WHERE user_id = ?1').bind(targetUserId),
+    db.prepare('DELETE FROM notifications WHERE user_id = ?1').bind(targetUserId),
     db.prepare('DELETE FROM users WHERE id = ?1').bind(targetUserId),
     db
       .prepare("INSERT INTO admin_log (admin_id, action, details) VALUES (?1, 'delete_user', ?2)")
@@ -487,13 +488,35 @@ export async function listCollection(db: D1Database, userId: number): Promise<Co
 export async function grantBoosters(db: D1Database, adminId: number, userId: number, amount: number): Promise<number> {
   const target = await getUser(db, userId);
   if (!target) throw new GameError('user_not_found', 404, 'Joueur introuvable.');
+  const boosterWord = `booster${amount > 1 ? 's' : ''}`;
   await db.batch([
     db.prepare('UPDATE users SET boosters = boosters + ?2 WHERE id = ?1').bind(userId, amount),
     db
       .prepare("INSERT INTO admin_log (admin_id, action, target_user, details) VALUES (?1, 'grant_boosters', ?2, ?3)")
       .bind(adminId, userId, JSON.stringify({ amount })),
+    db
+      .prepare('INSERT INTO notifications (user_id, message) VALUES (?1, ?2)')
+      .bind(userId, `Un administrateur t'a offert ${amount} ${boosterWord} !`),
   ]);
   return target.boosters + amount;
+}
+
+/** Offre des boosters à tous les joueurs d'un coup (compte admin). L'action est journalisée une fois. */
+export async function grantBoostersToAll(db: D1Database, adminId: number, amount: number): Promise<number> {
+  const { results } = await db.prepare('SELECT id FROM users').all<{ id: number }>();
+  const boosterWord = `booster${amount > 1 ? 's' : ''}`;
+  await db.batch([
+    db.prepare('UPDATE users SET boosters = boosters + ?1').bind(amount),
+    db
+      .prepare("INSERT INTO admin_log (admin_id, action, details) VALUES (?1, 'grant_boosters_all', ?2)")
+      .bind(adminId, JSON.stringify({ amount, players: results.length })),
+    ...results.map((u) =>
+      db
+        .prepare('INSERT INTO notifications (user_id, message) VALUES (?1, ?2)')
+        .bind(u.id, `Un administrateur a offert ${amount} ${boosterWord} à tout le monde !`),
+    ),
+  ]);
+  return results.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -803,6 +826,31 @@ export async function listNotableOpenings(db: D1Database, limit = 30): Promise<N
     if (notable.length >= limit) break;
   }
   return notable;
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+export interface NotificationRow {
+  id: number;
+  message: string;
+  createdAt: string;
+}
+
+/**
+ * Notifications non lues d'un joueur (ex. boosters offerts pendant qu'il n'était pas connecté),
+ * marquées lues dans la foulée : elles ne s'affichent qu'une fois.
+ */
+export async function takeUnreadNotifications(db: D1Database, userId: number): Promise<NotificationRow[]> {
+  const { results } = await db
+    .prepare('SELECT id, message, created_at AS createdAt FROM notifications WHERE user_id = ?1 AND read_at IS NULL ORDER BY id')
+    .bind(userId)
+    .all<NotificationRow>();
+  if (results.length > 0) {
+    await db.prepare("UPDATE notifications SET read_at = datetime('now') WHERE user_id = ?1 AND read_at IS NULL").bind(userId).run();
+  }
+  return results;
 }
 
 export interface OpeningHistoryEntry {

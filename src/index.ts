@@ -18,6 +18,8 @@ import {
   banUser,
   unbanUser,
   grantCurrency,
+  grantBoostersToAll,
+  takeUnreadNotifications,
   listUsers,
   listPlayerStats,
   openBooster,
@@ -197,6 +199,7 @@ app.post('/api/invite-code/check', async (c) => {
 // ---------------------------------------------------------------------------
 
 app.use('/api/me', requireUser);
+app.use('/api/notifications', requireUser);
 app.use('/api/cards', requireUser);
 app.use('/api/users', requireUser);
 app.use('/api/users/*', requireUser);
@@ -210,6 +213,9 @@ app.use('/api/profile/*', requireUser);
 app.use('/api/admin/*', requireUser, requireAdmin);
 
 app.get('/api/me', (c) => c.json(publicUser(c.get('user'))));
+
+/** Notifications non lues (ex. boosters offerts hors ligne) : lues une fois, elles disparaissent. */
+app.get('/api/notifications', async (c) => c.json(await takeUnreadNotifications(c.env.DB, c.get('user').id)));
 
 app.get('/api/cards', async (c) => {
   const { cards } = await getCatalog(c.env.DB);
@@ -297,6 +303,14 @@ app.post('/api/admin/grant', async (c) => {
   if (amount > MAX_GRANT) throw new GameError('bad_request', 400, `Maximum ${MAX_GRANT} boosters à la fois.`);
   const boosters = await grantBoosters(c.env.DB, c.get('user').id, positiveInt(body.userId, 'userId'), amount);
   return c.json({ userId: body.userId, boosters });
+});
+
+app.post('/api/admin/grant-all', async (c) => {
+  const body = await readJson(c);
+  const amount = positiveInt(body.amount, 'amount');
+  if (amount > MAX_GRANT) throw new GameError('bad_request', 400, `Maximum ${MAX_GRANT} boosters à la fois.`);
+  const players = await grantBoostersToAll(c.env.DB, c.get('user').id, amount);
+  return c.json({ players, amount });
 });
 
 app.post('/api/admin/users/:id/reset-password', async (c) => {

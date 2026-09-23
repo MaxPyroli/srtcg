@@ -533,7 +533,13 @@
         <label>Nombre de boosters (1 à 100)
           <input id="grantAmount" type="number" min="1" max="100" value="5">
         </label>
-        <button id="grantBtn" class="primary" type="button">Offrir</button>
+        <button id="grantBtn" class="primary" type="button">Offrir à ce joueur</button>
+
+        <p class="muted" style="margin-top:14px">Ou à tout le monde d'un coup (chacun sera notifié à sa prochaine visite) :</p>
+        <label>Nombre de boosters (1 à 100)
+          <input id="grantAllAmount" type="number" min="1" max="100" value="1">
+        </label>
+        <button id="grantAllBtn" class="secondary" type="button">Offrir à tout le monde</button>
 
         <h2 style="margin-top:28px">Offrir de la monnaie</h2>
         <p class="muted">La monnaie interne ne sert encore à rien : le compteur existe déjà pour plus tard.</p>
@@ -672,6 +678,19 @@ function say(message, bad = false) {
   toastTimer = setTimeout(() => { el.className = 'toast'; }, 4000);
 }
 
+/** Affiche plusieurs messages les uns après les autres (ex. plusieurs notifications d'un coup). */
+function sayEach(messages, bad = false) {
+  messages.forEach((message, i) => setTimeout(() => say(message, bad), i * 4200));
+}
+
+/** Boosters offerts pendant que le joueur n'était pas là : affichés une fois, à la connexion. */
+async function checkNotifications() {
+  try {
+    const notifications = await api('GET', '/api/notifications');
+    if (notifications.length) sayEach(notifications.map((n) => n.message));
+  } catch { /* pas grave, ce sera pour la prochaine fois */ }
+}
+
 /** Exécute une action, affiche l'erreur éventuelle, et empêche le double clic. */
 async function guarded(button, action) {
   button.disabled = true;
@@ -792,6 +811,7 @@ async function enterGame(me) {
   $('#game').hidden = false;
   renderWho();
   showTab(tabFromPath(location.pathname), { push: false });
+  checkNotifications();
 }
 
 function openWelcome(me) {
@@ -1456,6 +1476,15 @@ $('#grantBtn').addEventListener('click', (event) => guarded(event.currentTarget,
   await refreshPlayerStats();
 }));
 
+$('#grantAllBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
+  const amount = Number($('#grantAllAmount').value);
+  const result = await api('POST', '/api/admin/grant-all', { amount });
+  state.me.boosters += amount;
+  renderWho();
+  say(`${amount} booster${amount > 1 ? 's' : ''} offert${amount > 1 ? 's' : ''} à ${result.players} joueur${result.players > 1 ? 's' : ''}.`);
+  await refreshPlayerStats();
+}));
+
 $('#grantCurrencyBtn').addEventListener('click', (event) => guarded(event.currentTarget, async () => {
   const userId = Number($('#grantCurrencyUser').value);
   const amount = Number($('#grantCurrencyAmount').value);
@@ -1578,6 +1607,7 @@ function renderAdminStats(stats) {
 
 const ADMIN_ACTIONS = {
   grant_boosters: 'Boosters offerts',
+  grant_boosters_all: 'Boosters offerts à tout le monde',
   grant_currency: 'Monnaie offerte',
   create_code: 'Code créé',
   reset_password: 'Mot de passe réinitialisé',
@@ -1593,6 +1623,7 @@ function renderAdminLog(entries) {
     try {
       const d = JSON.parse(l.details || '{}');
       if (l.action === 'grant_boosters') detail = `${d.amount} booster${d.amount > 1 ? 's' : ''}`;
+      if (l.action === 'grant_boosters_all') detail = `${d.amount} booster${d.amount > 1 ? 's' : ''} × ${d.players} joueur${d.players > 1 ? 's' : ''}`;
       if (l.action === 'grant_currency') detail = `${d.amount} pièce${d.amount > 1 ? 's' : ''}`;
       if (l.action === 'create_code') detail = `${d.code} (${d.boosters} booster${d.boosters > 1 ? 's' : ''} × ${d.maxUses})`;
       if (l.action === 'delete_user') detail = d.displayName;
