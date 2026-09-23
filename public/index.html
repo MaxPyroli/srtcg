@@ -224,6 +224,18 @@
     display: flex; align-items: center; justify-content: center; padding: 24px; cursor: pointer;
   }
   .card-modal[hidden] { display: none; }
+  /* Petite animation d'ouverture/fermeture (fondu du fond + zoom du contenu) au lieu d'un bascule sec. */
+  .card-modal.opening { animation: modal-backdrop-in .18s ease both; }
+  .card-modal.closing { animation: modal-backdrop-out .15s ease both; }
+  .card-modal.opening > * { animation: modal-pop-in .18s cubic-bezier(.25, 1, .4, 1.2) both; }
+  .card-modal.closing > * { animation: modal-pop-out .15s ease both; }
+  @keyframes modal-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes modal-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes modal-pop-in { from { opacity: 0; transform: scale(.88); } to { opacity: 1; transform: scale(1); } }
+  @keyframes modal-pop-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(.92); } }
+  @media (prefers-reduced-motion: reduce) {
+    .card-modal.opening, .card-modal.closing, .card-modal.opening > *, .card-modal.closing > * { animation: none; }
+  }
   #cardModalContent { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   #cardModalContent .card { width: var(--reveal-w); height: var(--reveal-h); cursor: default; }
   #cardModalContent .card-modal-number { color: #fff; font-weight: 700; letter-spacing: .04em; margin: 0; }
@@ -681,16 +693,39 @@ function cardButton(card, opts = {}) {
   }, cardView(card, opts));
 }
 
+/** Ouvre/ferme une modale (.card-modal) avec une petite animation (fondu + zoom), au lieu d'un
+ * simple bascule de `hidden` qui apparaissait/disparaissait sans transition. */
+function openModal(el) {
+  el.hidden = false;
+  el.classList.remove('closing');
+  void el.offsetWidth; // relance l'animation si la modale était déjà en train de se refermer
+  el.classList.add('opening');
+}
+function closeModal(el) {
+  if (el.hidden) return;
+  el.classList.remove('opening');
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    el.hidden = true;
+    return;
+  }
+  el.classList.add('closing');
+  el.addEventListener('animationend', function done() {
+    el.classList.remove('closing');
+    el.hidden = true;
+    el.removeEventListener('animationend', done);
+  }, { once: true });
+}
+
 function openCardModal(card, opts = {}) {
   $('#cardModalContent').replaceChildren(
     cardView(card, opts),
     opts.overlay === 'none' ? h('p', { class: 'card-modal-number' }, `N° ${cardNumber(card.id)}`) : null);
-  $('#cardModal').hidden = false;
+  openModal($('#cardModal'));
 }
 
-$('#cardModal').addEventListener('click', () => { $('#cardModal').hidden = true; });
+$('#cardModal').addEventListener('click', () => closeModal($('#cardModal')));
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') $('#cardModal').hidden = true;
+  if (event.key === 'Escape') closeModal($('#cardModal'));
 });
 
 // --- Connexion -------------------------------------------------------------
@@ -728,10 +763,10 @@ async function enterGame(me) {
 
 function openWelcome(me) {
   $('#welcomeName').textContent = me.displayName;
-  $('#welcomeModal').hidden = false;
+  openModal($('#welcomeModal'));
 }
 
-$('#welcomeCloseBtn').addEventListener('click', () => { $('#welcomeModal').hidden = true; });
+$('#welcomeCloseBtn').addEventListener('click', () => closeModal($('#welcomeModal')));
 
 // --- Accueil : connexion ou création de compte -----------------------------
 
@@ -1146,7 +1181,7 @@ const STATUS = { pending: 'En attente', accepted: 'Acceptée', declined: 'Refus�
 async function conclude(id, action, message) {
   await api('POST', `/api/trades/${id}/${action}`);
   say(message);
-  $('#tradeModal').hidden = true;
+  closeModal($('#tradeModal'));
   await refreshTrades();
 }
 
@@ -1183,10 +1218,10 @@ function openTradeModal(t) {
       h('button', { type: 'button', class: 'secondary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'decline', 'Demande refusée.')) }, 'Refuser'));
   }
   $('#tradeModalActions').replaceChildren(...actions);
-  $('#tradeModal').hidden = false;
+  openModal($('#tradeModal'));
 }
 
-$('#tradeModal').addEventListener('click', (event) => { if (event.target === event.currentTarget) $('#tradeModal').hidden = true; });
+$('#tradeModal').addEventListener('click', (event) => { if (event.target === event.currentTarget) closeModal($('#tradeModal')); });
 
 // --- Profils -----------------------------------------------------------------
 
