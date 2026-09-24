@@ -285,15 +285,33 @@
   .avatar { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 999px; font-size: 1.3rem; color: #fff; flex: none; }
   .avatar.lg { width: 72px; height: 72px; font-size: 2.2rem; }
   .avatar-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-  .player-row { display: flex; align-items: center; gap: 10px; }
+  .player-row { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 0; }
+  /* Pseudo tronqué avec "…" plutôt que de pousser le bouton "Voir" à la ligne.
+     flex-basis à 0 (pas "auto") : sinon la décision de passer à la ligne se base sur la taille
+     du contenu avant réduction, et ça bascule quand même malgré min-width:0 + ellipsis. */
+  .liste-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 0; }
 
   ul.liste { list-style: none; margin: 0; padding: 0; }
-  ul.liste li { border-top: 1px solid var(--trait); padding: 10px 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+  /* flex-basis à 0 (pas "auto") sur la colonne de gauche : sinon la décision de passer à la
+     ligne se base sur la taille du texte avant réduction, et un seul bouton (ex. "Voir")
+     basculerait à la ligne inutilement pour un pseudo un peu long. Avec plusieurs boutons
+     (ex. gestion des comptes), .actions passe à la ligne lui-même si besoin, sans écraser
+     le nom ni déborder de l'écran. */
+  ul.liste li { border-top: 1px solid var(--trait); padding: 10px 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  ul.liste li > span:first-child { flex: 1 1 0; min-width: 0; }
+  ul.liste li > .actions { flex-wrap: wrap; justify-content: flex-end; }
   ul.liste li:first-child { border-top: 0; }
   .pastille { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .8rem; background: var(--fond); margin-left: 8px; }
   .pastille.bad { background: color-mix(in srgb, var(--erreur) 18%, var(--fond)); color: var(--erreur); }
 
   .table-wrap { overflow-x: auto; margin-bottom: 8px; }
+  /* Indice de défilement horizontal, avant la table : sans ça, rien ne signale qu'elle a
+     d'autres colonnes hors écran sur mobile (min-width:560px est plus large que la plupart
+     des téléphones). */
+  .table-hint { display: none; color: var(--discret); font-size: .8rem; margin: 0 0 8px; }
+  @media (max-width: 620px) {
+    .table-hint { display: block; }
+  }
   #statsTable { border-collapse: collapse; width: 100%; min-width: 560px; font-size: .92rem; }
   #statsTable th, #statsTable td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--trait); white-space: nowrap; }
   #statsTable th { color: var(--discret); font-weight: 600; }
@@ -516,6 +534,7 @@
 
       <div id="admin-players" hidden>
         <h2>Statistiques des joueurs</h2>
+        <p class="table-hint">Fais glisser le tableau vers la gauche pour voir toutes les colonnes →</p>
         <div class="table-wrap">
           <table id="statsTable">
             <thead>
@@ -1382,7 +1401,7 @@ function renderPlayerList() {
   $('#playerList').replaceChildren(...(state.players.length ? state.players.map((p) => h('li', {},
     h('span', { class: 'player-row' },
       avatarView(p.avatarEmoji, p.avatarColor),
-      h('span', {}, p.displayName, ' ', h('span', { class: 'muted' }, `— ${p.distinctCards} carte${p.distinctCards > 1 ? 's' : ''}`))),
+      h('span', { class: 'liste-name' }, p.displayName, ' ', h('span', { class: 'muted' }, `— ${p.distinctCards} carte${p.distinctCards > 1 ? 's' : ''}`))),
     h('span', { class: 'actions' }, h('button', { type: 'button', class: 'secondary', onclick: () => viewProfile(p.id) }, 'Voir')))
   ) : [h('li', { class: 'muted' }, 'Aucun joueur pour le moment.')]));
 }
