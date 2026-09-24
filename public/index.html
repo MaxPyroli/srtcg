@@ -67,10 +67,13 @@
   .cards { display: flex; flex-wrap: wrap; gap: 14px; }
   .cards[hidden] { display: none; }
 
-  /* Collection : toute la série en grille de 5, avec un emplacement vide pour ce qui manque. */
-  #collectionGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
-  #collectionGrid .card { width: 100%; height: auto; aspect-ratio: 2.5 / 3.5; }
-  #collectionGrid .qte { top: 4px; right: 4px; }
+  /* Grille compacte façon collection (petites cartes, plusieurs par ligne même sur mobile) :
+     la collection elle-même, mais aussi les grilles de sélection de carte pour un échange, qui
+     sinon utilisent la taille "grande carte" (--card-w) et ne tiennent qu'une carte par ligne
+     sur mobile. */
+  #collectionGrid, .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+  #collectionGrid .card, .pick-grid .card { width: 100%; height: auto; aspect-ratio: 2.5 / 3.5; }
+  #collectionGrid .qte, .pick-grid .qte { top: 4px; right: 4px; }
   .card.card-missing { border-style: dashed; }
   .card.card-missing .art { background: transparent; }
   .card.card-missing .num { color: var(--trait); text-shadow: none; }
@@ -480,12 +483,12 @@
 
       <div id="tradeStep2" hidden>
         <h2 style="margin-top:20px">Carte que tu veux</h2>
-        <div id="theirCardsGrid" class="cards"></div>
+        <div id="theirCardsGrid" class="pick-grid"></div>
       </div>
 
       <div id="tradeStep3" hidden>
         <h2 style="margin-top:20px">Carte que tu offres</h2>
-        <div id="myCardsGrid" class="cards"></div>
+        <div id="myCardsGrid" class="pick-grid"></div>
       </div>
 
       <p><button id="proposeBtn" class="primary" type="button" hidden>Proposer l'échange</button></p>
@@ -1303,7 +1306,7 @@ function renderTheirCards() {
       renderTheirCards();
       renderMyCards();
     },
-  }, cardView({ name: c.name, rarity: c.rarity, image: c.image }, { quantity: c.quantity, reserved: c.reserved })))
+  }, cardView({ id: c.cardId, name: c.name, rarity: c.rarity, image: c.image }, { quantity: c.quantity, reserved: c.reserved, overlay: 'number' })))
     : [h('p', { class: 'muted' }, "Ce joueur n'a aucune carte échangeable pour l'instant.")]));
 }
 
@@ -1315,7 +1318,7 @@ function renderMyCards() {
   $('#myCardsGrid').replaceChildren(...(mine.length ? mine.map((c) => h('button', {
     type: 'button', class: 'card-pick' + (tradeState.give === c.cardId ? ' picked' : ''), 'aria-label': `Offrir ${c.name}`,
     onclick: () => { tradeState.give = c.cardId; $('#proposeBtn').hidden = false; renderMyCards(); },
-  }, cardView({ name: c.name, rarity: c.rarity, image: c.image }, { quantity: c.quantity, reserved: c.reserved })))
+  }, cardView({ id: c.cardId, name: c.name, rarity: c.rarity, image: c.image }, { quantity: c.quantity, reserved: c.reserved, overlay: 'number' })))
     : [h('p', { class: 'muted' }, wanted ? `Tu n'as aucune carte ${RARITIES[wanted.rarity].toLowerCase()} à offrir.` : '')]));
 }
 
