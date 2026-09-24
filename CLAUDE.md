@@ -36,6 +36,9 @@ artistique qui viendra après le fonctionnement. Les 101 cartes actuelles sont d
 - Échange **uniquement entre deux cartes de même rareté**, **asynchrone** (une demande reste en attente, pas
   d'échange en direct). Les collections sont visibles par tous. Un joueur envoie une demande à un autre en
   proposant une de ses cartes et en indiquant celle qu'il veut.
+- (24/09/2026) Une demande sans réponse expire au bout de 48h (`TRADE_EXPIRY_HOURS` dans `src/config.ts`) :
+  la carte offerte est libérée. Vérifié à chaque lecture des échanges (`expirePendingTrades` dans `src/db.ts`),
+  pas de tâche planifiée — cohérent avec l'absence de temps réel en phase 1.
 - Recyclage de doublons contre de la monnaie : mis de côté pour l'instant, on garde seulement l'échange.
 - Monnaie interne : prévue pour des éléments de personnalisation (fonds de profil, titres, etc.). Sa source et
   ce que recouvre « cartes » dans les achats restent à définir.

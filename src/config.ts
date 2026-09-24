@@ -22,6 +22,9 @@ export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 /** Nombre maximal de boosters qu'un admin peut offrir d'un coup. */
 export const MAX_GRANT = 100;
 
+/** Une demande d'échange sans réponse expire au bout de ce délai. */
+export const TRADE_EXPIRY_HOURS = 48;
+
 /** Nombre maximal de monnaie qu'un admin peut offrir d'un coup (la monnaie ne sert à rien pour l'instant). */
 export const MAX_CURRENCY_GRANT = 10_000;
 

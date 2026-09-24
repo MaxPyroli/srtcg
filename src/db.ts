@@ -4,6 +4,7 @@ import type { Catalog, BoosterKind } from './draw.ts';
 import { drawBooster } from './draw.ts';
 import type { Rng } from './rng.ts';
 import { hashPassword, verifyPassword } from './auth.ts';
+import { TRADE_EXPIRY_HOURS } from './config.ts';
 
 // ---------------------------------------------------------------------------
 // Erreurs
@@ -556,6 +557,7 @@ export async function proposeTrade(db: D1Database, fromUserId: number, input: Tr
 export interface TradeEntry {
   id: number;
   status: string;
+  expired: number;
   createdAt: string;
   fromUserId: number;
   fromName: string;
@@ -568,10 +570,34 @@ export interface TradeEntry {
   requestedName: string;
 }
 
-export async function listTrades(db: D1Database, userId: number): Promise<TradeEntry[]> {
+/**
+ * Fait passer à "cancelled" (avec expired=1) les demandes en attente depuis plus de
+ * TRADE_EXPIRY_HOURS, et libère la carte offerte. Pas de tâche planifiée en phase 1 : appelée
+ * à chaque lecture des échanges, donc l'état vu par les joueurs reste à jour.
+ */
+export async function expirePendingTrades(db: D1Database): Promise<void> {
   const { results } = await db
     .prepare(
-      `SELECT t.id, t.status, t.created_at AS createdAt,
+      `SELECT id, from_user, offered_card FROM trades
+       WHERE status = 'pending' AND created_at <= datetime('now', '-' || ?1 || ' hours')`,
+    )
+    .bind(TRADE_EXPIRY_HOURS)
+    .all<{ id: number; from_user: number; offered_card: number }>();
+  if (results.length === 0) return;
+
+  await db.batch(
+    results.flatMap((t) => [
+      db.prepare("UPDATE trades SET status = 'cancelled', expired = 1, resolved_at = datetime('now') WHERE id = ?1").bind(t.id),
+      db.prepare('UPDATE collection SET reserved = reserved - 1 WHERE user_id = ?1 AND card_id = ?2').bind(t.from_user, t.offered_card),
+    ]),
+  );
+}
+
+export async function listTrades(db: D1Database, userId: number): Promise<TradeEntry[]> {
+  await expirePendingTrades(db);
+  const { results } = await db
+    .prepare(
+      `SELECT t.id, t.status, t.expired, t.created_at AS createdAt,
               t.from_user AS fromUserId, fu.display_name AS fromName,
               t.to_user AS toUserId, tu.display_name AS toName,
               t.offered_card AS offeredCardId, oc.name AS offeredName, oc.rarity AS offeredRarity,
@@ -597,6 +623,7 @@ export type TradeOutcome = 'accepted' | 'declined' | 'cancelled';
  * au moment précis de l'exécution : une demande ne peut être conclue qu'une seule fois.
  */
 export async function resolveTrade(db: D1Database, tradeId: number, actorId: number, outcome: TradeOutcome): Promise<void> {
+  await expirePendingTrades(db);
   const trade = await db
     .prepare('SELECT id, from_user, to_user, offered_card, requested_card FROM trades WHERE id = ?1')
     .bind(tradeId)
@@ -622,6 +649,18 @@ export async function resolveTrade(db: D1Database, tradeId: number, actorId: num
       db.prepare(upsert).bind(trade.to_user, trade.offered_card),
       db.prepare(upsert).bind(trade.from_user, trade.requested_card),
     );
+    // C'est toujours le destinataire (to_user) qui clique sur Accepter, donc qui voit la petite
+    // animation en direct côté navigateur ; l'auteur de la demande (from_user) n'est prévenu
+    // qu'à sa prochaine visite, faute de temps réel en phase 1.
+    const { byId } = await getCatalog(db);
+    const received = byId.get(trade.requested_card);
+    if (received) {
+      statements.push(
+        db
+          .prepare('INSERT INTO notifications (user_id, message, detail) VALUES (?1, ?2, ?3)')
+          .bind(trade.from_user, 'Ton échange a été accepté !', `Tu as reçu ${received.name}.`),
+      );
+    }
   } else {
     // Refus ou annulation : la carte offerte est libérée
     statements.push(
@@ -771,9 +810,10 @@ export async function listAdminLog(db: D1Database, limit = 50): Promise<AdminLog
 
 /** Comme listTrades, mais tous joueurs confondus (vue admin). */
 export async function listAllTrades(db: D1Database, limit = 30): Promise<TradeEntry[]> {
+  await expirePendingTrades(db);
   const { results } = await db
     .prepare(
-      `SELECT t.id, t.status, t.created_at AS createdAt,
+      `SELECT t.id, t.status, t.expired, t.created_at AS createdAt,
               t.from_user AS fromUserId, fu.display_name AS fromName,
               t.to_user AS toUserId, tu.display_name AS toName,
               t.offered_card AS offeredCardId, oc.name AS offeredName, oc.rarity AS offeredRarity,

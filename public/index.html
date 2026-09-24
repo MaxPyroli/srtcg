@@ -242,9 +242,23 @@
 
   #tradeModalContent { cursor: default; max-width: 420px; width: 100%; text-align: center; margin-bottom: 0; }
   #tradeModalContent h2 { text-align: left; }
-  .trade-cards { display: flex; justify-content: center; gap: 20px; margin-bottom: 14px; flex-wrap: wrap; }
+  .trade-cards { display: flex; justify-content: center; align-items: center; gap: 20px; margin-bottom: 14px; flex-wrap: wrap; }
   .trade-cards > div { display: flex; flex-direction: column; align-items: center; gap: 8px; }
   .trade-cards .muted { margin: 0; font-weight: 600; }
+  /* Petite cinématique à la conclusion d'un échange : les deux cartes arrivent en rebondissant,
+     décalées l'une de l'autre, et le check final ponctue le tout. */
+  #tradeSuccessContent { text-align: center; cursor: default; }
+  /* Toujours empilé verticalement (contrairement à .trade-cards, qui peut mettre les 2 cartes
+     côte à côte sur desktop) : avec la coche entre les deux, un passage à la ligne partiel
+     décale la coche à côté de la première carte au lieu de la centrer entre les deux. */
+  #tradeSuccessCards { flex-direction: column; }
+  #tradeSuccessCards > div:nth-child(1) { animation: trade-pop .5s cubic-bezier(.25, 1, .4, 1.3) both; }
+  #tradeSuccessCards > div:nth-child(3) { animation: trade-pop .5s cubic-bezier(.25, 1, .4, 1.3) .12s both; }
+  .trade-success-check { font-size: 2.2rem; animation: trade-pop .4s cubic-bezier(.25, 1, .4, 1.3) .3s both; }
+  @keyframes trade-pop { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) {
+    #tradeSuccessCards > div, .trade-success-check { animation: none; }
+  }
 
   #welcomeContent { cursor: default; max-width: 380px; width: 100%; text-align: center; margin-bottom: 0; }
 
@@ -301,6 +315,8 @@
   ul.liste li > span:first-child { flex: 1 1 0; min-width: 0; }
   ul.liste li > .actions { flex-wrap: wrap; justify-content: flex-end; }
   ul.liste li:first-child { border-top: 0; }
+  /* Échanges en attente : mis en valeur pour ne pas se noyer dans l'historique déjà conclu. */
+  #tradeList li.pending { background: color-mix(in srgb, var(--accent) 7%, transparent); box-shadow: inset 3px 0 0 var(--accent); padding-left: 10px; }
   .pastille { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .8rem; background: var(--fond); margin-left: 8px; }
   .pastille.bad { background: color-mix(in srgb, var(--erreur) 18%, var(--fond)); color: var(--erreur); }
 
@@ -439,7 +455,7 @@
 
     <div id="tab-trades" class="panel" hidden>
       <h2>Proposer un échange</h2>
-      <p class="muted">Un échange se fait entre deux cartes de même rareté. La carte que tu offres est bloquée jusqu'à la réponse.</p>
+      <p class="muted">Un échange se fait entre deux cartes de même rareté. La carte que tu offres est bloquée jusqu'à la réponse (ou 48h, si la demande expire).</p>
 
       <label>Chercher un joueur
         <input id="tradeSearch" type="text" autocomplete="off" placeholder="Pseudo...">
@@ -628,6 +644,13 @@
         <div id="tradeModalReceive"></div>
       </div>
       <p id="tradeModalActions" class="actions" style="justify-content:center"></p>
+    </div>
+  </div>
+
+  <div id="tradeSuccessModal" class="card-modal" hidden role="dialog" aria-modal="true" aria-label="Échange conclu">
+    <div id="tradeSuccessContent" class="panel">
+      <h2>Échange conclu !</h2>
+      <div class="trade-cards" id="tradeSuccessCards"></div>
     </div>
   </div>
 
@@ -1292,23 +1315,49 @@ $('#proposeBtn').addEventListener('click', (event) => guarded(event.currentTarge
 }));
 
 const STATUS = { pending: 'En attente', accepted: 'Acceptée', declined: 'Refusée', cancelled: 'Annulée' };
+/** Une demande expirée (48h sans réponse) réutilise le statut "cancelled" en base, avec un
+ * indicateur "expired" à part, pour ne pas laisser croire qu'elle a été annulée manuellement. */
+function statusLabel(t) {
+  return t.expired ? 'Expirée' : STATUS[t.status];
+}
 
-async function conclude(id, action, message) {
+async function conclude(id, action, message, cards) {
   await api('POST', `/api/trades/${id}/${action}`);
-  say(message);
   closeModal($('#tradeModal'));
+  if (action === 'accept' && cards) {
+    playTradeSuccess(cards.give, cards.receive);
+  } else {
+    say(message);
+  }
   await refreshTrades();
 }
+
+/** Petite animation quand un échange aboutit (côté de la personne qui clique sur Accepter ;
+ * l'autre joueur le verra passer à "Acceptée" à sa prochaine visite, faute de temps réel). */
+function playTradeSuccess(give, receive) {
+  $('#tradeSuccessCards').replaceChildren(
+    h('div', {}, h('p', { class: 'muted' }, 'Tu donnes'), cardView(give)),
+    h('span', { class: 'trade-success-check' }, '✅'),
+    h('div', {}, h('p', { class: 'muted' }, 'Tu reçois'), cardView(receive)));
+  openModal($('#tradeSuccessModal'));
+  clearTimeout(playTradeSuccess.timer);
+  playTradeSuccess.timer = setTimeout(() => closeModal($('#tradeSuccessModal')), 2600);
+}
+$('#tradeSuccessModal').addEventListener('click', () => closeModal($('#tradeSuccessModal')));
 
 function renderTrades() {
   const list = $('#tradeList');
   if (!state.trades.length) { list.replaceChildren(h('li', { class: 'muted' }, "Aucune demande pour l'instant.")); return; }
-  list.replaceChildren(...state.trades.map((t) => {
+  // Les demandes en attente remontent en premier (tri stable : l'ordre par date récente est
+  // conservé au sein de chaque groupe) et sont mises en valeur, pour ne pas les noyer dans
+  // l'historique des demandes déjà conclues.
+  const sorted = [...state.trades].sort((a, b) => (b.status === 'pending') - (a.status === 'pending'));
+  list.replaceChildren(...sorted.map((t) => {
     const mineOut = t.fromUserId === state.me.id;
     const text = mineOut
       ? `Tu proposes ${t.offeredName} à ${t.toName} contre ${t.requestedName}`
       : `${t.fromName} te propose ${t.offeredName} contre ${t.requestedName}`;
-    return h('li', {}, h('span', {}, text, ' ', h('span', { class: 'pastille' }, STATUS[t.status])),
+    return h('li', { class: t.status === 'pending' ? 'pending' : '' }, h('span', {}, text, ' ', h('span', { class: 'pastille' }, statusLabel(t))),
       h('span', { class: 'actions' }, h('button', { type: 'button', class: 'secondary', onclick: () => openTradeModal(t) }, "Voir l'échange")));
   }));
 }
@@ -1324,12 +1373,12 @@ function openTradeModal(t) {
 
   const actions = [];
   if (t.status !== 'pending') {
-    actions.push(h('span', { class: 'pastille' }, STATUS[t.status]));
+    actions.push(h('span', { class: 'pastille' }, statusLabel(t)));
   } else if (mineOut) {
     actions.push(h('button', { type: 'button', class: 'secondary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'cancel', 'Demande annulée.')) }, 'Annuler la demande'));
   } else {
     actions.push(
-      h('button', { type: 'button', class: 'primary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'accept', 'Échange accepté.')) }, 'Accepter'),
+      h('button', { type: 'button', class: 'primary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'accept', 'Échange accepté.', { give, receive })) }, 'Accepter'),
       h('button', { type: 'button', class: 'secondary', onclick: (e) => guarded(e.currentTarget, () => conclude(t.id, 'decline', 'Demande refusée.')) }, 'Refuser'));
   }
   $('#tradeModalActions').replaceChildren(...actions);
@@ -1665,7 +1714,7 @@ function renderAdminLog(entries) {
 function renderAdminTrades(trades) {
   $('#adminTradeList').replaceChildren(...(trades.length ? trades.map((t) => h('li', {},
     h('span', {}, `${fmtDate(t.createdAt)} — ${t.fromName} propose ${t.offeredName} contre ${t.requestedName} de ${t.toName}`),
-    h('span', { class: 'pastille' }, STATUS[t.status]),
+    h('span', { class: 'pastille' }, statusLabel(t)),
   )) : [h('p', { class: 'muted' }, 'Aucun échange pour le moment.')]));
 }
 

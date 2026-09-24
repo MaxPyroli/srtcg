@@ -293,6 +293,24 @@ describe('notifications', () => {
     expect(res.json).toHaveLength(1);
     expect(res.json[0].message).toContain('3 boosters');
   });
+
+  it('l\'auteur d\'une demande d\'échange est notifié quand elle est acceptée', async () => {
+    const alice = await login('alice');
+    const bob = await login('bob');
+    give(alice.id, COMMUNE_A);
+    give(bob.id, COMMUNE_B);
+    const { json } = await call('POST', '/api/trades', { cookie: alice.cookie, body: { toUserId: bob.id, offeredCardId: COMMUNE_A, requestedCardId: COMMUNE_B } });
+    await call('POST', `/api/trades/${json.id}/accept`, { cookie: bob.cookie });
+
+    const res = await call('GET', '/api/notifications', { cookie: alice.cookie });
+    expect(res.json).toHaveLength(1);
+    expect(res.json[0].message).toContain('accepté');
+    expect(res.json[0].detail).toContain('Commune 02');
+
+    // Bob (celui qui a accepté, et qui voit l'animation en direct) n'a pas de notification pour ça.
+    const forBob = await call('GET', '/api/notifications', { cookie: bob.cookie });
+    expect(forBob.json).toHaveLength(0);
+  });
 });
 
 describe('sanctions', () => {
@@ -898,5 +916,34 @@ describe('échanges', () => {
     const res = await call('GET', `/api/users/${bob.id}/collection`, { cookie: alice.cookie });
     expect(res.status).toBe(200);
     expect(res.json.cards).toMatchObject([{ cardId: COMMUNE_B, quantity: 1 }]);
+  });
+
+  describe('expiration (48h)', () => {
+    it('une demande en attente depuis plus de 48h expire, et la carte offerte est libérée', async () => {
+      const { json } = await propose(alice.cookie, bob.id, COMMUNE_A, COMMUNE_B);
+      db.exec(`UPDATE trades SET created_at = datetime('now', '-49 hours') WHERE id = ${json.id}`);
+
+      const forAlice = await call('GET', '/api/trades', { cookie: alice.cookie });
+      expect(forAlice.json[0]).toMatchObject({ status: 'cancelled', expired: 1 });
+      expect(qty(alice.id, COMMUNE_A)).toEqual({ quantity: 1, reserved: 0 });
+    });
+
+    it('une demande de moins de 48h n\'expire pas', async () => {
+      const { json } = await propose(alice.cookie, bob.id, COMMUNE_A, COMMUNE_B);
+      db.exec(`UPDATE trades SET created_at = datetime('now', '-47 hours') WHERE id = ${json.id}`);
+
+      const forAlice = await call('GET', '/api/trades', { cookie: alice.cookie });
+      expect(forAlice.json[0]).toMatchObject({ status: 'pending', expired: 0 });
+      expect(qty(alice.id, COMMUNE_A)).toEqual({ quantity: 1, reserved: 1 });
+    });
+
+    it('accepter une demande expirée échoue proprement (déjà close)', async () => {
+      const { json } = await propose(alice.cookie, bob.id, COMMUNE_A, COMMUNE_B);
+      db.exec(`UPDATE trades SET created_at = datetime('now', '-49 hours') WHERE id = ${json.id}`);
+
+      const res = await call('POST', `/api/trades/${json.id}/accept`, { cookie: bob.cookie });
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe('trade_closed');
+    });
   });
 });
