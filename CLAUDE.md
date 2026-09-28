@@ -15,7 +15,7 @@ artistique qui viendra après le fonctionnement. Les 101 cartes actuelles sont d
 
 1. **Ouverture de boosters** (le moment de plaisir : animation soignée à prévoir)
 2. **Échange de cartes** (le lien social de la communauté)
-3. **Combat** : volontairement repoussé en phase 2. Ne pas le construire sans demande explicite.
+3. **Combat** : volontairement repoussé en phase 2 (règles décidées plus bas). Ne pas le construire sans demande explicite.
 
 ## Décisions prises
 
@@ -85,6 +85,43 @@ artistique qui viendra après le fonctionnement. Les 101 cartes actuelles sont d
 - Hébergement : Cloudflare avec le nom de domaine du propriétaire (le DNS peut être confié à Cloudflare).
   Mise en ligne prévue par GitHub + Workers Builds (déploiement à chaque `git push`, liens de test par branche).
 
+## Système de combat (décidé, phase 2 : ne pas coder tant qu'on ne le demande pas)
+
+Mélange de TCG et de Mille Bornes : c'est une course, pas un combat à points de vie.
+
+- Jusqu'à 4 joueurs, chacun son tour. Chaque joueur a sa propre piste de bornes. Le premier qui atteint 200 gagne,
+  la partie s'arrête net (pas de classement 2e/3e).
+- Chaque joueur construit un deck de 20 cartes piochées dans sa collection : environ 70 % de Coureurs (~14), le reste
+  en Aléas et Réparations (~35 % d'Aléas parmi ce reste).
+- Types de cartes, indépendants de la rareté : Coureur, Aléa, Réparation, Équipement (immunité permanente contre un
+  Aléa précis, jouable en Coup Fourré), Pouvoir (effet spécial hors piste).
+- Zones : main (privée), un seul Coureur actif (visible), Équipements posés (visibles), piste de bornes (visible),
+  pioche personnelle (cachée).
+- Un tour : (1) si pas de Coureur actif, en remettre un gratuitement (depuis la main ; sinon piocher 3 cartes, garder
+  ce qu'on veut, remettre les autres sous la pioche ; pas de garantie d'en trouver un) ; (2) piocher 1 carte ;
+  (3) jouer UNE seule carte : faire avancer son Coureur, ou attaquer avec un Aléa, ou se protéger (Réparation/Équipement).
+- Sans Coureur actif, un joueur est immunisé aux Aléas.
+- Chaque Coureur a un kilométrage max (ses PV) et une attaque fixe. Le faire avancer fait gagner « attaque » bornes au
+  joueur ET retire la même valeur de son kilométrage restant. Un Aléa peut aussi entamer ce kilométrage. À 0, le Coureur
+  meurt et retourne dans la pioche (il peut ressortir plus tard).
+- Récompense de mise à mort (comme les cartes EX de Pokémon) : tuer un Coureur adverse avec un Aléa fait gagner des
+  bornes à l'attaquant : 0 (commune), 10 (peu commune), 25 (rare), 50 (légendaire). Une mort par épuisement naturel
+  ne rapporte rien à personne.
+- Stats par rareté (kilométrage max / attaque) : commune 60/20, peu commune 100/25, rare 155/31, légendaire 228/38.
+  Un Aléa de base fait 27 dégâts. Valeurs calibrées par simulation : ~17,8 tours par partie (5 à 10 minutes réelles
+  estimées), victoire solo avec une seule carte dans 0,8 % des parties. Elles bougeront quand les Aléas/Équipements
+  auront un texte d'effet précis : les garder dans un fichier de config facile à modifier.
+- Ciblage : pas de règle générale, chaque carte Aléa/Réparation/Équipement/Pouvoir précise sa propre cible dans son
+  texte d'effet.
+- Fil narratif : les Coureurs sont la communauté SRTV. Les 5 légendaires sont les 5 membres de SRTV ; la carte secrète
+  est un Pouvoir (le pouvoir collectif de SRTV réuni). Les Aléas/Réparations/Équipements s'inspirent des running jokes
+  du stream. La mascotte de la chaîne est un pain de mie en kart. Rien de tout ça n'est nommé ni illustré pour l'instant.
+- Le combat en direct, plus tard, pourra utiliser les Durable Objects de Cloudflare (sinon, un tour par tour
+  asynchrone est possible).
+- Impact sur le code existant : aujourd'hui les 101 cartes n'ont qu'un nom et une rareté. Le jour où on code le combat,
+  il faudra leur ajouter un type, un kilométrage max, une attaque et un texte d'effet (nouvelle migration). Ne pas
+  figer le catalogue dans un format trop pauvre d'ici là.
+
 ## Commandes
 
 ```bash
@@ -117,4 +154,4 @@ fichier dans `migrations/` (jamais en éditant un fichier déjà appliqué).
 4. Codes de boosters et événements créés par l'admin
 5. Animation d'ouverture soignée, puis vrais noms et images des cartes (après le choix de l'univers)
 6. Monnaie interne (après avoir défini comment on la gagne)
-7. Combat (phase 2)
+7. Combat (phase 2) : voir la section « Système de combat »
