@@ -61,6 +61,10 @@ export function translateDbError(error: unknown): unknown {
     const info = DB_TOKENS.E_TRADE_CLOSED;
     return new GameError(info.code, info.status, info.message);
   }
+  // Suikamon : le jeton de partie est la clé primaire de suikamon_runs, donc impossible de l'utiliser deux fois.
+  if (text.includes('suikamon_runs.nonce')) {
+    return new GameError('run_used', 409, 'Ce score a déjà été envoyé.');
+  }
   return error;
 }
 

@@ -55,3 +55,25 @@ export const AVATAR_COLORS = [
   '#2b59c3', '#b3261e', '#2f9e6e', '#d69a12', '#8a45d1',
   '#3b6fd4', '#c2410c', '#0f766e', '#a21caf', '#475569',
 ] as const;
+
+// ---------------------------------------------------------------------------
+// Suikamon (mini-jeu de fusion de Poké Balls, classement public sans compte)
+// ---------------------------------------------------------------------------
+
+/** Plus haut score accepté, quoi qu'il arrive. */
+export const SUIKAMON_MAX_SCORE = 1_000_000;
+
+/** Un score ne peut pas dépasser ce nombre de points par seconde de partie (réel : ~5 pour un très bon joueur)... */
+export const SUIKAMON_MAX_POINTS_PER_SECOND = 30;
+
+/** ...plus cette marge, pour les grosses chaînes du début de partie. */
+export const SUIKAMON_SCORE_MARGIN = 500;
+
+/** Une partie plus courte que ça n'est pas enregistrée. */
+export const SUIKAMON_MIN_RUN_SECONDS = 10;
+
+/** Au-delà, le jeton de partie est périmé (une partie ne dure pas 6 heures). */
+export const SUIKAMON_RUN_TTL_SECONDS = 6 * 3600;
+
+/** Nombre de lignes du classement affichées. */
+export const SUIKAMON_LEADERBOARD_SIZE = 20;

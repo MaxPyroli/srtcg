@@ -43,6 +43,7 @@ import {
   INVITE_CODE_KEY,
 } from './db.ts';
 import type { TradeOutcome } from './db.ts';
+import { startRun, submitScore, getLeaderboard } from './suikamon.ts';
 
 type AppEnv = { Bindings: Env; Variables: { user: UserRow } };
 
@@ -383,6 +384,23 @@ app.get('/api/admin/overview', async (c) => {
     listNotableOpenings(c.env.DB),
   ]);
   return c.json({ stats, adminLog, trades, notableOpenings });
+});
+
+// ---------------------------------------------------------------------------
+// Suikamon : classement public, sans compte (voir src/suikamon.ts)
+// ---------------------------------------------------------------------------
+
+app.post('/api/suikamon/run', async (c) => c.json({ run: await startRun(sessionSecret(c.env)) }));
+
+app.post('/api/suikamon/scores', async (c) => {
+  const body = await readJson(c);
+  const result = await submitScore(c.env.DB, sessionSecret(c.env), { run: body.run, score: body.score, player: body.player });
+  return c.json(result);
+});
+
+app.get('/api/suikamon/leaderboard', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  return c.json(await getLeaderboard(c.env.DB, c.req.query('player')));
 });
 
 // Les pages du site (dossier public/) sont servies par Cloudflare avant d'arriver ici.
