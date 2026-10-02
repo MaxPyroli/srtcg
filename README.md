@@ -14,6 +14,9 @@ Le combat, la connexion Twitch et le design viendront ensuite.
   La carte offerte est bloquée pendant l'attente. La carte secrète n'est pas échangeable.
 - Compte admin : offrir des boosters (action journalisée).
 - Page de test pour tout essayer (`public/index.html`), sobre : le design viendra avec l'univers.
+- **Suikamon** (`public/suikamon/index.html`, adresse `/suikamon/`) : mini-jeu à la Suika Game, où l'on fusionne
+  des Poké Balls identiques jusqu'à la Master Ball. Un seul fichier autonome, sans lien avec le reste du moteur
+  (pas de base, pas de compte) ; les balles sont dessinées en code, les sons sont synthétisés.
 - Catalogue provisoire de 101 cartes (50 / 35 / 10 / 5 + 1 secrète), à renommer plus tard.
 
 ## Essayer chez toi (sur ton ordinateur)
