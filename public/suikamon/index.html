@@ -41,8 +41,8 @@
   .jeu {
     display: grid;
     grid-template-columns: minmax(0, auto) minmax(220px, 1fr);
-    grid-template-areas: "zone hud" "zone classement" "zone chaine";
-    grid-template-rows: auto auto 1fr;
+    grid-template-areas: "zone hud" "zone chaine";
+    grid-template-rows: auto 1fr;
     gap: 14px 18px;
     align-items: start;
   }
@@ -100,14 +100,6 @@
   }
   .hud { grid-area: hud; display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px 14px; align-items: center; }
   .chaine-boite { grid-area: chaine; }
-  #classement { grid-area: classement; }
-  #classement[hidden] { display: none; }
-  .rangs { list-style: none; margin: 8px 0 0; padding: 0; font-variant-numeric: tabular-nums; }
-  .rangs li { display: grid; grid-template-columns: 2.2em 1fr auto; gap: 6px; padding: 3px 6px; border-radius: 8px; font-size: .9rem; }
-  .rangs li.moi { background: rgba(255, 210, 63, .18); font-weight: 700; }
-  .rangs .pseudo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rangs .rang { color: var(--discret); }
-  .rangs li:nth-child(-n+3) .rang { color: var(--or); font-weight: 700; }
   .etiquette { margin: 0; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--discret); }
   .valeur { margin: 0; font-size: 1.7rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; }
   .valeur.petit { font-size: 1.25rem; color: var(--or); }
@@ -143,7 +135,7 @@
 
   @media (max-width: 720px) {
     .appli { padding: 10px 12px 20px; }
-    .jeu { grid-template-columns: 1fr; grid-template-areas: "hud" "zone" "classement" "chaine"; grid-template-rows: auto; }
+    .jeu { grid-template-columns: 1fr; grid-template-areas: "hud" "zone" "chaine"; grid-template-rows: auto; }
     .zone { width: min(100%, 420px, max(240px, calc((100dvh - 200px) * 0.65625))); }
     .hud { padding: 8px 12px; }
     .hud button { padding: 5px 11px; font-size: .85rem; }
@@ -187,7 +179,6 @@
           <div class="gros" id="fin-score">0</div>
           <p class="record" id="fin-record" hidden>Nouveau record !</p>
           <p id="fin-detail"></p>
-          <p id="fin-rang"></p>
           <button class="primaire" id="btn-rejouer-fin" type="button">Rejouer</button>
         </div>
       </div>
@@ -212,12 +203,6 @@
         <button type="button" id="btn-rejouer">Recommencer</button>
       </div>
       <p class="astuce">Souris : déplace et clique. Tactile : glisse et relâche. Clavier : ←/→ (ou Q/D) puis Espace.</p>
-    </section>
-
-    <section class="chaine-boite" id="classement" aria-label="Classement" hidden>
-      <h2 class="etiquette">Classement</h2>
-      <p class="chaine-note" id="classement-moi"></p>
-      <ol class="rangs" id="rangs"></ol>
     </section>
 
     <section class="chaine-boite" aria-label="Ordre des fusions">
@@ -285,7 +270,7 @@ const CORRECTION_MAX = 1.4;   // déplacement maximal par itération, pour que l
 const AMORTISSEMENT = 0.12;   // freinage de l'air, par seconde
 const AMORT_ANGULAIRE = 0.5;
 const VITESSE_MAX = 2400;
-const TOLERANCE_FUSION = 4;    // écart toléré pour considérer que deux balles se touchent (au repos, le solveur en laisse 1 à 3)
+const TOLERANCE_FUSION = 0.8; // écart toléré pour considérer que deux balles se touchent
 
 /* ==========================================================================
    Dessin des Poké Balls (tout est dessiné ici, aucune image)
@@ -790,10 +775,6 @@ const el = {
   finScore: document.getElementById('fin-score'),
   finRecord: document.getElementById('fin-record'),
   finDetail: document.getElementById('fin-detail'),
-  finRang: document.getElementById('fin-rang'),
-  classement: document.getElementById('classement'),
-  classementMoi: document.getElementById('classement-moi'),
-  rangs: document.getElementById('rangs'),
   btnPause: document.getElementById('btn-pause'),
   btnSon: document.getElementById('btn-son'),
   annonce: document.getElementById('annonce'),
@@ -850,7 +831,6 @@ function nouvellePartie() {
     fini: false,
   };
   jeu.atteints.add(jeu.main);
-  demarrerRun(jeu);
   el.voileFin.hidden = true;
   el.voilePause.hidden = true;
   el.btnPause.textContent = 'Pause';
@@ -943,7 +923,6 @@ function finir() {
   document.getElementById('btn-rejouer-fin').focus();
   el.annonce.textContent = `Partie terminée. Score : ${jeu.score}.`;
   son.fin();
-  envoyerScore(jeu);
   majScore();
 }
 
@@ -1172,65 +1151,6 @@ function majChaine() {
 }
 
 /* ==========================================================================
-   Classement en ligne (facultatif : si le serveur ne répond pas, le jeu marche sans)
-   ========================================================================== */
-
-const API = '/api/suikamon';
-
-// Pas de compte : une clé aléatoire gardée dans ce navigateur, le serveur attribue le pseudo.
-function cleJoueur() {
-  let cle = lire('suikamon.joueur', '');
-  if (!/^[0-9a-f]{32}$/.test(cle)) {
-    cle = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, '0')).join('');
-    ecrire('suikamon.joueur', cle);
-  }
-  return cle;
-}
-const CLE = cleJoueur();
-
-async function api(chemin, corps) {
-  const rep = await fetch(API + chemin, corps
-    ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(corps) }
-    : { method: chemin === '/run' ? 'POST' : 'GET' });
-  if (!rep.ok) throw new Error(String(rep.status));
-  return rep.json();
-}
-
-// Au début de chaque partie, le serveur remet un jeton signé : sans lui, aucun score n'est accepté.
-async function demarrerRun(partie) {
-  try { partie.run = (await api('/run')).run; } catch (e) { partie.run = null; }
-}
-
-async function envoyerScore(partie) {
-  el.finRang.textContent = '';
-  if (!partie.run || partie.score < 1) return;
-  try {
-    const r = await api('/scores', { run: partie.run, score: partie.score, player: CLE });
-    el.finRang.textContent = `${r.pseudo} : n°${r.rank} au classement`;
-  } catch (e) { /* trop court, hors ligne… : la partie compte quand même pour le record local */ }
-  actualiserClassement();
-}
-
-async function actualiserClassement() {
-  let d;
-  try { d = await api(`/leaderboard?player=${CLE}`); } catch (e) { return; }
-  el.rangs.innerHTML = '';
-  for (const l of d.top) {
-    const li = document.createElement('li');
-    const rang = document.createElement('span'); rang.className = 'rang'; rang.textContent = `${l.rank}.`;
-    const pseudo = document.createElement('span'); pseudo.className = 'pseudo'; pseudo.textContent = l.pseudo;
-    const score = document.createElement('span'); score.textContent = l.score.toLocaleString('fr-FR');
-    if (d.me && l.pseudo === d.me.pseudo && l.score === d.me.score) li.className = 'moi';
-    li.append(rang, pseudo, score);
-    el.rangs.append(li);
-  }
-  el.classementMoi.textContent = d.me
-    ? `Tu joues sous le pseudo « ${d.me.pseudo} » : n°${d.me.rank} sur ${d.players}.`
-    : (d.players ? `${d.players} joueur(s). Termine une partie pour entrer au classement !` : 'Personne au classement : sois le premier !');
-  el.classement.hidden = false;
-}
-
-/* ==========================================================================
    Taille de l'écran
    ========================================================================== */
 
@@ -1352,7 +1272,6 @@ document.getElementById('favicon').href = (() => {
   return c.toDataURL('image/png');
 })();
 nouvellePartie();
-actualiserClassement();
 redimensionner();
 new ResizeObserver(redimensionner).observe(canvas);
 window.addEventListener('resize', () => { redimensionner(); majSuivant(); });

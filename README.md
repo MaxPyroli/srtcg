@@ -16,11 +16,7 @@ Le combat, la connexion Twitch et le design viendront ensuite.
 - Page de test pour tout essayer (`public/index.html`), sobre : le design viendra avec l'univers.
 - **Suikamon** (`public/suikamon/index.html`, adresse `/suikamon/`) : mini-jeu à la Suika Game, où l'on fusionne
   des Poké Balls identiques jusqu'à la Master Ball. Un seul fichier autonome, sans lien avec le reste du moteur
-  (pas de compte) ; les balles sont dessinées en code, les sons sont synthétisés. **Classement public** avec
-  pseudos aléatoires attribués par le serveur (`src/suikamon.ts`, table `suikamon_scores`, migration 0014) : il
-  s'active tout seul quand le jeu est servi par le Worker, et disparaît si le serveur ne répond pas. Un score
-  envoyé par le navigateur ne peut pas être prouvé : des garde-fous (jeton de partie signé à usage unique, durée
-  minimale, plafond de points par seconde) rendent la triche pénible, pas impossible.
+  (pas de base, pas de compte) ; les balles sont dessinées en code, les sons sont synthétisés.
 - Catalogue provisoire de 101 cartes (50 / 35 / 10 / 5 + 1 secrète), à renommer plus tard.
 
 ## Essayer chez toi (sur ton ordinateur)
@@ -54,8 +50,7 @@ npm run smoke       # parcours complet contre le serveur lancé par « npm run d
 
 1. `npx wrangler login` (ouvre le navigateur pour se connecter à Cloudflare)
 2. `npx wrangler d1 create tcg-communaute` puis copier le `database_id` affiché dans `wrangler.jsonc`
-3. `npm run db:remote` (crée les tables et les cartes en ligne ; à refaire après chaque nouvelle migration,
-   par exemple celle du classement de Suikamon)
+3. `npm run db:remote` (crée les tables et les cartes en ligne)
 4. Générer puis enregistrer la clé qui signe les sessions :
    ```bash
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"

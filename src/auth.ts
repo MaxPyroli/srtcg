@@ -52,18 +52,6 @@ export async function verifySession(token: string | undefined, secret: string, n
   return id;
 }
 
-/** Signature HMAC-SHA256 (base64url) d'un texte : sert à authentifier des jetons sans les stocker. */
-export async function signToken(text: string, secret: string): Promise<string> {
-  const sig = await crypto.subtle.sign('HMAC', await hmacKey(secret), enc.encode(text));
-  return toBase64Url(new Uint8Array(sig));
-}
-
-export async function verifyToken(text: string, signature: string, secret: string): Promise<boolean> {
-  const sigBytes = fromBase64Url(signature);
-  if (!sigBytes) return false;
-  return crypto.subtle.verify('HMAC', await hmacKey(secret), sigBytes, enc.encode(text));
-}
-
 // ---------------------------------------------------------------------------
 // Mots de passe (connexion de test : chaque joueur choisit le sien)
 // ---------------------------------------------------------------------------
